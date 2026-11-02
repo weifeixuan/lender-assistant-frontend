@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button, EmptyState, Spinner, Tag } from '@/components/ui';
 import { ChatIcon } from '@/components/icons';
+import type { ConversationSummary } from '@/api/types';
 import { useKnowledge } from '@/lib/knowledge';
 import { formatThousands, truncateTitle } from '@/lib/format';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -26,6 +28,7 @@ export function ChatPage() {
     startDraft,
     select,
     adopt,
+    remove,
     removeLocal,
     enterEmpty,
   } = useConversations();
@@ -41,6 +44,9 @@ export function ChatPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 1280);
   const [viewTurnId, setViewTurnId] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ idx: number; seq: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -122,6 +128,57 @@ export function ChatPage() {
     startDraft();
   };
 
+  const handleRequestDelete = (conversation: ConversationSummary) => {
+    setDeleteError(null);
+    setDeleteTarget(conversation);
+  };
+
+  const handleCancelDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = () => {
+    const target = deleteTarget;
+    if (!target || deleting) return;
+    const deletingCurrent =
+      target.conversationId === activeConversationId && mode === 'conversation';
+    // 确认后才中止流式并发出请求；取消不会打断当前回答
+    if (deletingCurrent) stop();
+    setDeleting(true);
+    setDeleteError(null);
+
+    void (async () => {
+      try {
+        const outcome = await remove(target.conversationId);
+        setDeleting(false);
+        setDeleteTarget(null);
+        const removedMessage = outcome === 'missing' ? '该会话已不存在，已从列表移除' : null;
+
+        if (!deletingCurrent) {
+          if (removedMessage) setNotice(removedMessage);
+          return;
+        }
+
+        const rest = list.filter((item) => item.conversationId !== target.conversationId);
+        const next = rest[0];
+        if (next) {
+          await openConversation(next.conversationId);
+        } else {
+          clearTurns();
+          setViewTurnId(null);
+          setFocus(null);
+          enterEmpty();
+        }
+        if (removedMessage) setNotice(removedMessage);
+      } catch (cause) {
+        setDeleting(false);
+        setDeleteError(cause instanceof Error ? cause.message : '删除失败，请重试');
+      }
+    })();
+  };
+
   const handleAsk = (question: string) => {
     setViewTurnId(null);
     setFocus(null);
@@ -175,6 +232,7 @@ export function ChatPage() {
           onToggle={() => setSidebarCollapsed((value) => !value)}
           onNewDraft={handleNewDraft}
           onSelect={handleSelect}
+          onDelete={handleRequestDelete}
           onRetryLoad={() => void loadList()}
         />
 
@@ -284,6 +342,21 @@ export function ChatPage() {
           focusIdx={focus?.idx ?? null}
         />
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除会话"
+        description={
+          deleteTarget ? (
+            <>将删除会话「{deleteTarget.title}」及其全部历史消息，删除后不可恢复。</>
+          ) : null
+        }
+        confirmText="删除"
+        busy={deleting}
+        error={deleteError}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+      />
     </AppShell>
   );
 }

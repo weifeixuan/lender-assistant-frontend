@@ -36,7 +36,14 @@ export function ConfirmDialog({
 
   useEffect(() => {
     if (!open) return;
+    const trigger =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancelRef.current?.focus();
+    return () => trigger?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busy) cancelHandler.current();
     };
