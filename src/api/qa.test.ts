@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './client';
 import { listConversationsMock, listMessagesMock, resetConversationsMock } from './mock';
 import { parseMeta, streamQa } from './qa';
+import { DEV_USER_ID } from '@/lib/identity';
 import type { QaDone, QaMeta, QaSource } from './types';
 
 describe('parseMeta', () => {
@@ -166,5 +167,132 @@ describe('streamQa mock', () => {
         new AbortController().signal,
       ),
     ).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+function sseBody(blocks: string[]): string {
+  return `${blocks.join('\n\n')}\n\n`;
+}
+
+function emptyHandlers(overrides: Partial<Parameters<typeof streamQa>[2]> = {}) {
+  return {
+    onMeta: () => undefined,
+    onSources: () => undefined,
+    onDelta: () => undefined,
+    onDone: () => undefined,
+    onError: () => undefined,
+    ...overrides,
+  };
+}
+
+describe('streamQa real SSE', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('posts conversationId, injects X-User-Id and consumes the full event order', async () => {
+    const body = sseBody([
+      'event: meta\ndata: {"conversationId":"conv-1","roundId":"r2","userMessageId":"u2","assistantMessageId":"a2"}',
+      'event: sources\ndata: []',
+      'event: delta\ndata: 你好',
+      'event: delta\ndata: 世界',
+      'event: done\ndata: {"provider":"DashScope","elapsedMillis":800,"sourceCount":0}',
+    ]);
+    const response = new Response(body, { status: 200 });
+    const fetchMock = vi.fn<typeof fetch>(async () => response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const events: string[] = [];
+    const metas: QaMeta[] = [];
+    const deltas: string[] = [];
+    let done: QaDone | null = null;
+
+    await streamQa(
+      'conv-1',
+      '追问',
+      emptyHandlers({
+        onMeta: (meta) => {
+          events.push('meta');
+          metas.push(meta);
+        },
+        onSources: () => events.push('sources'),
+        onDelta: (text) => {
+          if (!events.includes('delta')) events.push('delta');
+          deltas.push(text);
+        },
+        onDone: (value) => {
+          events.push('done');
+          done = value;
+        },
+        onError: () => events.push('error'),
+      }),
+      new AbortController().signal,
+    );
+
+    const call = fetchMock.mock.calls.at(0);
+    expect(call?.[0]).toBe('/api/qa');
+    expect(call?.[1]?.method).toBe('POST');
+    const headers = new Headers(call?.[1]?.headers);
+    expect(headers.get('X-User-Id')).toBe(DEV_USER_ID);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      question: '追问',
+      conversationId: 'conv-1',
+    });
+
+    expect(events).toEqual(['meta', 'sources', 'delta', 'done']);
+    expect(metas.at(0)?.roundId).toBe('r2');
+    expect(deltas).toEqual(['你好', '世界']);
+    expect(done).not.toBeNull();
+  });
+
+  it('omits conversationId for the first question', async () => {
+    const response = new Response(
+      sseBody([
+        'event: meta\ndata: {"conversationId":"conv-2","roundId":"r1","userMessageId":"u1","assistantMessageId":"a1"}',
+        'event: done\ndata: {"provider":"DashScope","elapsedMillis":500,"sourceCount":0}',
+      ]),
+      { status: 200 },
+    );
+    const fetchMock = vi.fn<typeof fetch>(async () => response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await streamQa(null, '首问', emptyHandlers(), new AbortController().signal);
+
+    const call = fetchMock.mock.calls.at(0);
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ question: '首问' });
+  });
+
+  it('stops consuming after a malformed meta and reports it once', async () => {
+    const response = new Response(
+      sseBody([
+        'event: meta\ndata: {"conversationId":"conv-3"}',
+        'event: delta\ndata: 不应出现',
+        'event: done\ndata: {"provider":"DashScope","elapsedMillis":1,"sourceCount":0}',
+      ]),
+      { status: 200 },
+    );
+    vi.stubGlobal('fetch', vi.fn(async () => response));
+
+    const errors: string[] = [];
+    const deltas: string[] = [];
+
+    await streamQa(
+      null,
+      '首问',
+      emptyHandlers({
+        onError: (message) => errors.push(message),
+        onDelta: (text) => deltas.push(text),
+      }),
+      new AbortController().signal,
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('响应协议异常');
+    expect(deltas).toEqual([]);
   });
 });
