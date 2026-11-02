@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
-import { Button, EmptyState, Tag } from '@/components/ui';
+import { Button, EmptyState, Spinner, Tag } from '@/components/ui';
 import { ChatIcon } from '@/components/icons';
 import { useKnowledge } from '@/lib/knowledge';
 import { formatThousands, truncateTitle } from '@/lib/format';
@@ -233,11 +233,22 @@ export function ChatPage() {
                   title="开始一次知识库对话"
                   description="直接提问即可开始；同一会话里的追问会保留上下文，历史讨论可以随时回到。回答正文用【来源N】标注引用。"
                 />
-              ) : (
+              ) : mode === 'draft' ? (
                 <EmptyState
                   icon={<ChatIcon size={20} className="text-muted" />}
                   title="新对话"
                   description="这是未保存的草稿；发出第一条问题后，会话才会出现在左侧「最近」并开始保留历史。"
+                />
+              ) : historyStatus === 'loading' ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 py-10 text-muted">
+                  <Spinner />
+                  <p className="text-meta">正在加载会话历史…</p>
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<ChatIcon size={20} className="text-muted" />}
+                  title="这个会话还没有内容"
+                  description="在下方输入框提问，即可为它增加第一条问答。"
                 />
               )
             ) : (

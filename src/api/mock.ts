@@ -69,6 +69,9 @@ const SENTENCES = [
   '若企业名称为空，则以上一期的名称回填；回填后仍为空时该条记录进入待补录队列。',
 ];
 
+/** 单测环境把 mock 节奏压缩十倍，避免真实 70ms/段把流式用例拖到超时；浏览器演示节奏不变。 */
+const PACE = import.meta.env.MODE === 'test' ? 10 : 1;
+
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -78,7 +81,7 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
     const timer = window.setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       resolve();
-    }, ms);
+    }, Math.max(1, Math.round(ms / PACE)));
     const onAbort = () => {
       window.clearTimeout(timer);
       reject(new DOMException('已取消', 'AbortError'));
