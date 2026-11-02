@@ -7,6 +7,14 @@ dist/
 .vite/
 coverage/
 *.tsbuildinfo
-dev.log
-dev.err.log
+.eslintcache
+*.log
 .screenshots/
+
+# 系统与编辑器本地文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+.trae/

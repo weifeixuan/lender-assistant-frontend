@@ -1,3 +1,4 @@
+import { DEV_USER_ID } from '../lib/identity';
 import type { ApiEnvelope } from './types';
 
 /** 统一错误：message 直接取服务端 msg 原文，不做二次改写 */
@@ -29,6 +30,16 @@ export function apiPath(path: string): string {
   return `${baseUrl}${path}`;
 }
 
+/**
+ * 所有请求统一注入开发期用户标识；调用方传入的同名头会被覆盖，
+ * 避免各调用点自行拼装（见 spec 中「请求头统一注入」）。
+ */
+export function authHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  headers.set('X-User-Id', DEV_USER_ID);
+  return headers;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -52,7 +63,7 @@ function readMessage(payload: unknown): string | null {
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(apiPath(path), init);
+    response = await fetch(apiPath(path), { ...init, headers: authHeaders(init?.headers) });
   } catch {
     throw new ApiError('连接中断，请确认后端服务已启动后重试', 0, null);
   }

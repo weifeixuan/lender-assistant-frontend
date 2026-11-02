@@ -95,7 +95,8 @@ lender-assistant-frontend/
 
 - 必须 `fetch` + POST + `ReadableStream` 手工解析，**不能用 `EventSource`**（只支持 GET）。
 - 报文按空行分块；块内 `event:` 行取事件名，`data:` 行按顺序拼接（多行 data 用 `\n` 连接）。
-- 事件集合固定四种：`sources`（JSON 数组）→ `delta`（纯文本，可多次）→ `done`（JSON）→ `error`（纯文本）。
+- 事件集合：`meta`（JSON，必须是首个事件，含 `conversationId/roundId/userMessageId/assistantMessageId`）→
+  [`sources`]（JSON 数组，未召回时省略）→ `delta`（纯文本，可多次）→ `done`（JSON）或 `error`（纯文本）。
   **不得**新增/消费其他事件名（后端没有 `retrieval`、`progress` 之类）。
 - 解析函数为纯函数 `parseSseBlock(block)`，返回 `{ event, data }`，便于测试。
 - 停止：`AbortController.abort()`；已渲染内容保留，标记 `已停止`，不算失败。
@@ -117,7 +118,8 @@ lender-assistant-frontend/
 - 术语只用 PRD §3：文档 / 文档名 / 原始文件名 / 切片 / 序号 / 章节路径 / 字符数 / 召回 / 来源。
 - 禁用词：页码、token/令牌、解析中、待解析、进度百分比、查询改写、重排/rerank、top-k 重排、部门。
 - 不出现任何文档状态标签；上传返回即最终结果。
-- 对话是**单轮**：历史气泡只展示，不参与生成；前端不得伪造上下文记忆，也不提供"新会话"按钮。
+- 对话是**多轮**：会话由后端懒创建，历史消息参与生成；前端只提交当前 `conversationId` 与问题，不得伪造上下文记忆。
+- 提供「新对话」入口；新会话以本地草稿承载，首问收到 `meta` 后才进入「最近」列表，草稿不落库。
 - 检索过程侧栏只反映真实阶段：双通道召回 → RRF 融合 → 送入上下文 → 来源明细。
 - 页面不提供登录、用户菜单、设置、全局搜索。
 

@@ -67,7 +67,7 @@ export interface QaSource {
   content: string;
   /** 仅向量通道命中时有值 */
   vectorDistance: number | null;
-  /** 关键词通道命中数；未命中时为 0 */
+  /** 关键词通道命中数；未命中时为 null */
   keywordHits: number | null;
   bothChannels: boolean;
   /** 5 位小数字符串，避免浮点展示误差 */
@@ -78,6 +78,59 @@ export interface QaDone {
   provider: string;
   elapsedMillis: number;
   sourceCount: number;
+}
+
+/** 会话历史消息角色 */
+export type MessageRole = 'USER' | 'ASSISTANT';
+
+/** 历史消息终态；流式中的消息不在历史列表里出现 */
+export type MessageStatus = 'DONE' | 'FAILED' | 'STOPPED';
+
+/** 历史来源结构与问答来源一致，别名镜像避免两份声明漂移 */
+export type QaSourceItem = QaSource;
+
+export interface MessageItem {
+  messageId: string;
+  /** 同一轮的用户消息与助手消息共享该值，用于分组渲染 */
+  roundId: string;
+  role: MessageRole;
+  content: string;
+  status: MessageStatus;
+  /** 仅助手消息可能有来源；未召回或用户消息为 null */
+  sources: QaSourceItem[] | null;
+  /** 仅助手消息有值 */
+  provider: string | null;
+  /** 仅助手消息有值 */
+  elapsedMillis: number | null;
+  /** 失败原因原文；成功为 null */
+  error: string | null;
+  createTime: string;
+}
+
+export interface MessageList {
+  conversationId: string;
+  messages: MessageItem[];
+}
+
+export interface ConversationSummary {
+  conversationId: string;
+  /** 首问前 20 字符 */
+  title: string;
+  createTime: string;
+  updateTime: string;
+}
+
+export interface ConversationDeleteResult {
+  conversationId: string;
+  deleted: true;
+}
+
+/** POST /api/qa 流式响应的首个事件载荷 */
+export interface QaMeta {
+  conversationId: string;
+  roundId: string;
+  userMessageId: string;
+  assistantMessageId: string;
 }
 
 /** 统一响应包装（/api/qa 的 SSE 除外） */
