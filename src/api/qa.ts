@@ -3,6 +3,8 @@ import {
   MOCK_ANSWER,
   MOCK_EMPTY_ANSWER,
   beginMockRound,
+  consumeMockGenerationFailure,
+  consumeMockNetworkFailure,
   delay,
   finishMockRound,
   mockQaSources,
@@ -154,13 +156,13 @@ async function streamQaMock(
     await delay(240, signal);
 
     for (let offset = 0; offset < MOCK_ANSWER.length; offset += PAGE_SIZE) {
-      await delay(30, signal);
+      await delay(70, signal);
       const piece = MOCK_ANSWER.slice(offset, offset + PAGE_SIZE);
       answer += piece;
       handlers.onDelta(piece);
     }
 
-    if (/失败|生成失败/.test(question)) {
+    if (/失败|生成失败/.test(question) && consumeMockGenerationFailure()) {
       finishMockRound(round, {
         status: 'FAILED',
         content: answer,
@@ -173,7 +175,7 @@ async function streamQaMock(
       return;
     }
 
-    if (/断网|网络/.test(question)) {
+    if (/断网|网络/.test(question) && consumeMockNetworkFailure()) {
       throw new ApiError('连接中断，请确认后端服务已启动后重试', 0, null);
     }
 

@@ -310,12 +310,30 @@ export interface MockRoundOutcome {
 let mockConversations: MockConversation[] = [];
 let conversationSeq = 0;
 let messageSeq = 0;
+let generationFailureConsumed = false;
+let networkFailureConsumed = false;
 
 /** 测试与演示用：清空内存仓库，模拟刷新后重置 */
 export function resetConversationsMock(): void {
   mockConversations = [];
   conversationSeq = 0;
   messageSeq = 0;
+  generationFailureConsumed = false;
+  networkFailureConsumed = false;
+}
+
+/** 生成失败只演示一次，让同一问题的「重试」能成功 */
+export function consumeMockGenerationFailure(): boolean {
+  if (generationFailureConsumed) return false;
+  generationFailureConsumed = true;
+  return true;
+}
+
+/** 网络中断只演示一次，便于验证重试恢复 */
+export function consumeMockNetworkFailure(): boolean {
+  if (networkFailureConsumed) return false;
+  networkFailureConsumed = true;
+  return true;
 }
 
 function findConversation(conversationId: string): MockConversation | null {

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Thread } from './Thread';
 import type { Turn } from './useQaStream';
@@ -34,10 +34,14 @@ describe('Thread 历史态', () => {
     expect(screen.queryByText('回答生成中')).not.toBeInTheDocument();
   });
 
-  it('shows the server error and retry for FAILED', () => {
-    renderThread([turn({ status: 'error', error: '模型超时' })]);
+  it('shows the server error and retries the same question', () => {
+    const onRetry = vi.fn();
+    render(
+      <Thread turns={[turn({ status: 'error', error: '模型超时' })]} onCite={vi.fn()} onRetry={onRetry} onStop={vi.fn()} />,
+    );
     expect(screen.getByText('模型超时')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(onRetry).toHaveBeenCalledWith('问题');
   });
 
   it('shows 已停止 for STOPPED and keeps partial content', () => {
