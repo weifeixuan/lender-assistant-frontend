@@ -123,6 +123,23 @@ export function PanelRightIcon(props: IconProps) {
   );
 }
 
+export function PanelLeftIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <path d="M6 2.5v11" />
+    </Svg>
+  );
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 3v10M3 8h10" />
+    </Svg>
+  );
+}
+
 export function AlertIcon(props: IconProps) {
   return (
     <Svg {...props}>

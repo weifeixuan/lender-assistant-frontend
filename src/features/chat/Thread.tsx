@@ -92,10 +92,11 @@ export function Thread({
               </div>
             ) : null}
 
-            {turn.status === 'done' && turn.meta ? (
+            {turn.status !== 'streaming' && (turn.meta || turn.origin === 'history') ? (
               <div className="mt-2.5 border-t border-dashed border-line pt-2 text-meta text-muted">
-                {turn.meta.provider} · 耗时 {formatMillis(turn.meta.elapsedMillis)} · 引用{' '}
-                {formatThousands(turn.meta.sourceCount)} 条
+                {turn.meta ? turn.meta.provider : '—'} · 耗时{' '}
+                {turn.meta ? formatMillis(turn.meta.elapsedMillis) : '—'} · 引用{' '}
+                {formatThousands(turn.meta ? turn.meta.sourceCount : turn.sources.length)} 条
               </div>
             ) : null}
           </div>

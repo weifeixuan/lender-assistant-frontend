@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui';
 import { SendIcon } from '@/components/icons';
 
@@ -6,13 +6,16 @@ const MAX_HEIGHT = 140;
 
 /** 自适应高度多行输入；Enter 发送、Shift+Enter 换行（PRD FR-04） */
 export function Composer({
+  value,
+  onChange,
   streaming,
   onSubmit,
 }: {
+  value: string;
+  onChange: (value: string) => void;
   streaming: boolean;
   onSubmit: (question: string) => void;
 }) {
-  const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -20,13 +23,12 @@ export function Composer({
     if (!element) return;
     element.style.height = 'auto';
     element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`;
-  }, [text]);
+  }, [value]);
 
   const submit = () => {
-    const question = text.trim();
+    const question = value.trim();
     if (!question || streaming) return;
     onSubmit(question);
-    setText('');
   };
 
   return (
@@ -34,9 +36,9 @@ export function Composer({
       <textarea
         ref={textareaRef}
         rows={1}
-        value={text}
+        value={value}
         disabled={streaming}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
@@ -52,7 +54,7 @@ export function Composer({
         <Button
           variant="primary"
           className="ml-auto"
-          disabled={streaming || text.trim().length === 0}
+          disabled={streaming || value.trim().length === 0}
           onClick={submit}
         >
           <SendIcon size={14} />

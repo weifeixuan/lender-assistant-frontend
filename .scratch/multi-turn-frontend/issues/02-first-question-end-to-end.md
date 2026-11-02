@@ -12,16 +12,22 @@
 
 **预估:** 2h
 
-- [ ] 进入 `/chat` 调 `GET /api/conversations`；为空时主区显示欢迎语，输入框可用，不自动建档
-- [ ] 侧栏顶部是「新对话」，下方只有「最近」分组，不出现「项目」分组
-- [ ] 三栏布局可用：会话侧栏 240px（可折叠）、对话主区 1fr、检索面板 300px（可折叠）；1440px 无横向溢出
-- [ ] 点击「新对话」进入草稿态：列表条目数不变，主区出现「未保存」标识
-- [ ] 草稿态再次点击「新对话」清空当前草稿，仍为草稿；草稿不写本地持久化
-- [ ] 草稿直接发送可用，等同于首问；请求体不含 `conversationId`，`topK` 不传，但携带 `X-User-Id`
-- [ ] 发送后立即出现用户气泡与助手占位，`Turn.id` 匹配 `tmp-<seq>`，`messageId / roundId / userMessageId` 为 `null`
-- [ ] SSE 首事件为 `meta`；到达后 `Turn.id` 替换为 `assistantMessageId`，记录 `roundId`、`userMessageId`
-- [ ] 收到 `meta` 后条目出现在「最近」首位并高亮；标题等于首问前 20 个 code point
+- [x] 进入 `/chat` 调 `GET /api/conversations`；为空时主区显示欢迎语，输入框可用，不自动建档
+- [x] 侧栏顶部是「新对话」，下方只有「最近」分组，不出现「项目」分组
+- [x] 三栏布局可用：会话侧栏 240px（可折叠）、对话主区 1fr、检索面板 300px（可折叠）；1440px 无横向溢出
+- [x] 点击「新对话」进入草稿态：列表条目数不变，主区出现「未保存」标识
+- [x] 草稿态再次点击「新对话」清空当前草稿，仍为草稿；草稿不写本地持久化
+- [x] 草稿直接发送可用，等同于首问；请求体不含 `conversationId`，`topK` 不传，但携带 `X-User-Id`
+- [x] 发送后立即出现用户气泡与助手占位，`Turn.id` 匹配 `tmp-<seq>`，`messageId / roundId / userMessageId` 为 `null`
+- [x] SSE 首事件为 `meta`；到达后 `Turn.id` 替换为 `assistantMessageId`，记录 `roundId`、`userMessageId`
+- [x] 收到 `meta` 后条目出现在「最近」首位并高亮；标题等于首问前 20 个 code point
 - [ ] 首问在 `meta` 前失败（超时 / 网络）时保持草稿，列表无新增条目；重发仍按首问处理
-- [ ] 之后继续消费 `sources → delta* → done`，正文逐段追加；`done` 后显示 provider / 耗时 / 引用数
-- [ ] `meta` 四字段缺失或类型错误时本轮标记失败，不继续消费后续事件
-- [ ] mock 模式可完整演示「空态 → 新对话 → 首问 → 转正 → 列表条目出现」
+- [x] 之后继续消费 `sources → delta* → done`，正文逐段追加；`done` 后显示 provider / 耗时 / 引用数
+- [x] `meta` 四字段缺失或类型错误时本轮标记失败，不继续消费后续事件
+- [x] mock 模式可完整演示「空态 → 新对话 → 首问 → 转正 → 列表条目出现」
+
+## Comments
+
+- 2026-11-03：TDD 完成。新增 `qa.test.ts`(6)、`conversations.test.ts`(4)、`history.test.ts`(5)、`ConversationSidebar.test.tsx`(6)、`useQaStream.test.tsx`(3)；全仓 10 个文件 / 39 个用例通过，`typecheck` / `build` 通过，`lint` 0 error。
+- UI 手工验证（`/chat?mock=1`，dev server 实际运行）：空态欢迎语 + 输入框 + 侧栏「新对话 / 最近」且无「项目」；点击「新对话」出现「未保存」且列表不增条目；发送首问后回答逐段出现，侧栏出现同名条目并高亮。
+- 未验证项：`meta` 到达前的网络 / 超时失败路径（mock 未构造该时序，留待票 07 与真实后端联调）；`:hover` 伪类下的删除按钮显隐仅由 `group-hover` 类保证，未用真实鼠标悬停验证（删除交互在票 06 验收）。

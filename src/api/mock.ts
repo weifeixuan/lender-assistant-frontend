@@ -1,5 +1,18 @@
 import { ApiError } from './client';
-import type { ChunkItem, ChunkPage, DeleteResult, DocSummary, QaSource, UploadResult } from './types';
+import { truncateTitle } from '@/lib/format';
+import type {
+  ChunkItem,
+  ChunkPage,
+  ConversationDeleteResult,
+  ConversationSummary,
+  DeleteResult,
+  DocSummary,
+  MessageItem,
+  MessageList,
+  QaMeta,
+  QaSource,
+  UploadResult,
+} from './types';
 
 /**
  * 本地 mock：字段与真实契约逐字一致，仅用于没有后端时的联调与演示。
@@ -261,4 +274,180 @@ export const MOCK_ANSWER =
 
 export const MOCK_EMPTY_ANSWER = '资料库中没有检索到相关内容，请先上传并入库文档。';
 
+/* ------------------------------------------------------------------ *
+ * 多轮会话内存仓库（模拟后端懒创建、历史装配与软删）
+ * ------------------------------------------------------------------ */
+
+interface MockConversation {
+  conversationId: string;
+  title: string;
+  createTime: string;
+  updateTime: string;
+  /** 排序用的单调序号，避免同一秒内无法区分先后 */
+  seq: number;
+  busy: boolean;
+  roundSeq: number;
+  messages: MessageItem[];
+}
+
+export interface MockRoundContext {
+  conversationId: string;
+  roundId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  meta: QaMeta;
+}
+
+export interface MockRoundOutcome {
+  status: 'DONE' | 'FAILED' | 'STOPPED';
+  content: string;
+  sources: QaSource[];
+  provider: string | null;
+  elapsedMillis: number | null;
+  error: string | null;
+}
+
+let mockConversations: MockConversation[] = [];
+let conversationSeq = 0;
+let messageSeq = 0;
+
+/** 测试与演示用：清空内存仓库，模拟刷新后重置 */
+export function resetConversationsMock(): void {
+  mockConversations = [];
+  conversationSeq = 0;
+  messageSeq = 0;
+}
+
+function findConversation(conversationId: string): MockConversation | null {
+  return mockConversations.find((item) => item.conversationId === conversationId) ?? null;
+}
+
+export function listConversationsMock(): Promise<ConversationSummary[]> {
+  return delay(300).then(() =>
+    [...mockConversations]
+      .sort((a, b) => {
+        if (a.updateTime === b.updateTime) return b.seq - a.seq;
+        return a.updateTime < b.updateTime ? 1 : -1;
+      })
+      .map((item) => ({
+        conversationId: item.conversationId,
+        title: item.title,
+        createTime: item.createTime,
+        updateTime: item.updateTime,
+      })),
+  );
+}
+
+/** 开启一轮：草稿建会话、已有会话追加 USER 消息，并预分配助手消息 id */
+export function beginMockRound(conversationId: string | null, question: string): MockRoundContext {
+  const time = nowText();
+  let conversation: MockConversation;
+
+  if (conversationId === null) {
+    conversationSeq += 1;
+    conversation = {
+      conversationId: `mock-conversation-${conversationSeq}`,
+      title: truncateTitle(question),
+      createTime: time,
+      updateTime: time,
+      seq: conversationSeq,
+      busy: true,
+      roundSeq: 0,
+      messages: [],
+    };
+    mockConversations.push(conversation);
+  } else {
+    const found = findConversation(conversationId);
+    if (!found) throw new ApiError('会话不存在或已删除', 404, 404);
+    if (found.busy) throw new ApiError('该会话正在生成回答，请稍后', 409, 409);
+    conversation = found;
+    conversation.busy = true;
+    conversation.updateTime = time;
+    conversation.seq = (conversationSeq += 1);
+  }
+
+  conversation.roundSeq += 1;
+  const roundId = `${conversation.conversationId}-round-${conversation.roundSeq}`;
+  messageSeq += 1;
+  const userMessageId = `mock-user-${messageSeq}`;
+  messageSeq += 1;
+  const assistantMessageId = `mock-assistant-${messageSeq}`;
+
+  conversation.messages.push({
+    messageId: userMessageId,
+    roundId,
+    role: 'USER',
+    content: question,
+    status: 'DONE',
+    sources: null,
+    provider: null,
+    elapsedMillis: null,
+    error: null,
+    createTime: time,
+  });
+
+  return {
+    conversationId: conversation.conversationId,
+    roundId,
+    userMessageId,
+    assistantMessageId,
+    meta: {
+      conversationId: conversation.conversationId,
+      roundId,
+      userMessageId,
+      assistantMessageId,
+    },
+  };
+}
+
+/** 结束一轮：写入助手消息终态，释放忙碌标记并刷新排序时间 */
+export function finishMockRound(context: MockRoundContext, outcome: MockRoundOutcome): void {
+  const conversation = findConversation(context.conversationId);
+  if (!conversation) return;
+  conversation.messages.push({
+    messageId: context.assistantMessageId,
+    roundId: context.roundId,
+    role: 'ASSISTANT',
+    content: outcome.content,
+    status: outcome.status,
+    sources: outcome.sources,
+    provider: outcome.provider,
+    elapsedMillis: outcome.elapsedMillis,
+    error: outcome.error,
+    createTime: nowText(),
+  });
+  conversation.busy = false;
+  conversation.updateTime = nowText();
+  conversation.seq = (conversationSeq += 1);
+}
+
+export async function listMessagesMock(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<MessageList> {
+  await delay(260, signal);
+  const conversation = findConversation(conversationId);
+  if (!conversation) throw new ApiError('会话不存在或已删除', 404, 404);
+  return {
+    conversationId,
+    messages: conversation.messages.map((message) => ({
+      ...message,
+      sources: message.sources
+        ? message.sources.map((source) => ({ ...source }))
+        : null,
+    })),
+  };
+}
+
+export async function deleteConversationMock(
+  conversationId: string,
+): Promise<ConversationDeleteResult> {
+  await delay(320);
+  const index = mockConversations.findIndex((item) => item.conversationId === conversationId);
+  if (index < 0) throw new ApiError('会话不存在或已删除', 404, 404);
+  mockConversations.splice(index, 1);
+  return { conversationId, deleted: true };
+}
+
 export { delay };
+
