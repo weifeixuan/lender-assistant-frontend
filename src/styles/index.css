@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* design token：唯一色值来源，tailwind.config.ts 通过变量名映射 */
+:root {
+  --kb-bg: #f3f4f7;
+  --kb-panel: #ffffff;
+  --kb-panel-2: #fafbfc;
+  --kb-ink: #11151c;
+  --kb-ink-2: #39414f;
+  --kb-muted: #8a92a2;
+  --kb-line: #e4e7ee;
+  --kb-line-2: #eef0f5;
+  --kb-brand: #1f4fd8;
+  --kb-brand-2: #173fb0;
+  --kb-brand-soft: #eef2fe;
+  --kb-brand-line: #dbe3fd;
+  --kb-ok: #0b7d55;
+  --kb-ok-soft: #e7f6ef;
+  --kb-ok-line: #cbe9dc;
+  --kb-warn: #a86a13;
+  --kb-warn-soft: #fdf3e2;
+  --kb-warn-line: #f3e0c2;
+  --kb-ink-3: #1c2b5e;
+  --kb-line-3: #cfd6e4;
+  --kb-panel-3: #fcfdff;
+  --kb-placeholder: #a7aebe;
+  --kb-brand-soft-2: #e3eafd;
+  --kb-brand-grad-a: #2a5ee8;
+  --kb-brand-grad-b: #1b3fae;
+  --kb-danger: #b4342f;
+  --kb-danger-soft: #fdeeee;
+  --kb-danger-soft-2: #fbdedd;
+  --kb-danger-line: #e8c4c2;
+  --kb-file-docx-bg: #eaf1fd;
+  --kb-file-docx-fg: #2a5bd8;
+  --kb-file-md-bg: #eef7ee;
+  --kb-file-md-fg: #2e7a45;
+  --kb-file-txt-bg: #f1f1f4;
+  --kb-file-txt-fg: #5a6478;
+  --kb-font: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --kb-mono: ui-monospace, 'SF Mono', Consolas, 'Roboto Mono', monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    font-family: var(--kb-font);
+    font-size: 13px;
+    margin: 0;
+  }
+
+  /* 键盘可达性：只在键盘聚焦时显示轮廓 */
+  :focus-visible {
+    outline: 2px solid var(--kb-brand);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* 折叠态原文：最多两行，超出省略 */
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--kb-line) transparent;
+  }
+}

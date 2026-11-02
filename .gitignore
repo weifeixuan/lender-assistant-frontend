@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.local
+.env
+.env.*
+!.env.example
+.vite/
+coverage/
+*.tsbuildinfo
+dev.log
+dev.err.log
+.screenshots/
