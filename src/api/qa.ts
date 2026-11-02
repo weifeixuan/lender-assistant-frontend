@@ -6,6 +6,7 @@ import {
   consumeMockGenerationFailure,
   consumeMockNetworkFailure,
   delay,
+  deleteConversationMock,
   finishMockRound,
   mockQaSources,
 } from './mock';
@@ -122,7 +123,11 @@ async function streamQaMock(
   await delay(280, signal);
 
   if (conversationId !== null) {
-    if (/404|已删除/.test(question)) throw new ApiError('会话不存在或已删除', 404, 404);
+    if (/404|已删除/.test(question)) {
+      // 模拟真实后端：404 表示会话已不存在，后续列表刷新也不应再出现
+      await deleteConversationMock(conversationId).catch(() => undefined);
+      throw new ApiError('会话不存在或已删除', 404, 404);
+    }
     if (/409|正在生成/.test(question)) {
       throw new ApiError('该会话正在生成回答，请稍后', 409, 409);
     }

@@ -3,7 +3,7 @@ import { AppShell } from '@/components/AppShell';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button, EmptyState, Spinner, Tag } from '@/components/ui';
 import { ChatIcon } from '@/components/icons';
-import type { ConversationSummary } from '@/api/types';
+import type { ConversationSummary, MessageItem } from '@/api/types';
 import { useKnowledge } from '@/lib/knowledge';
 import { formatThousands, truncateTitle } from '@/lib/format';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -63,6 +63,35 @@ export function ChatPage() {
   const isHistory = Boolean(viewed && latest && viewed.id !== latest.id);
   const streaming = viewed?.status === 'streaming' || streamingTurnId !== null;
 
+  /** 历史返回时若用户已经开出新一轮，保留实时轮次，避免被历史整批覆盖 */
+  const turnsRef = useRef(turns);
+  useEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
+
+  const applyHistory = useCallback(
+    (messages: MessageItem[]) => {
+      const historyTurns = buildTurns(messages);
+      const live = turnsRef.current;
+      if (live.length === 0) {
+        resetTurns(historyTurns);
+        return;
+      }
+      const liveIds = new Set(live.map((turn) => turn.id));
+      const liveRounds = new Set(
+        live.map((turn) => turn.roundId).filter((roundId): roundId is string => roundId !== null),
+      );
+      resetTurns([
+        ...historyTurns.filter(
+          (turn) =>
+            !liveIds.has(turn.id) && (turn.roundId === null || !liveRounds.has(turn.roundId)),
+        ),
+        ...live,
+      ]);
+    },
+    [resetTurns],
+  );
+
   useEffect(() => {
     const element = threadRef.current;
     if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
@@ -75,12 +104,12 @@ export function ChatPage() {
       if (cancelled || firstId === null) return;
       const result = await loadHistory(firstId);
       if (cancelled || result.kind !== 'ok') return;
-      resetTurns(buildTurns(result.messages));
+      applyHistory(result.messages);
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadList, loadHistory, resetTurns]);
+  }, [loadList, loadHistory, applyHistory]);
 
   const openConversation = useCallback(
     async (conversationId: string) => {
@@ -91,24 +120,29 @@ export function ChatPage() {
       setNotice(null);
       select(conversationId);
       const result = await loadHistory(conversationId);
-      if (result.kind === 'ok') resetTurns(buildTurns(result.messages));
+      if (result.kind === 'ok') applyHistory(result.messages);
     },
-    [stop, clearTurns, select, loadHistory, resetTurns],
+    [stop, clearTurns, select, loadHistory, applyHistory],
   );
 
   const handleMissingConversation = useCallback(
     (message: string, conversationId: string) => {
       removeLocal(conversationId);
-      setNotice(message);
       const rest = list.filter((item) => item.conversationId !== conversationId);
-      if (rest.length > 0) {
-        const next = rest[0];
-        if (next) void openConversation(next.conversationId);
+      const next = rest[0];
+      if (next) {
+        void (async () => {
+          await openConversation(next.conversationId);
+          setNotice(message);
+        })();
         return;
       }
       stop();
       clearTurns();
+      setViewTurnId(null);
+      setFocus(null);
       enterEmpty();
+      setNotice(message);
     },
     [removeLocal, list, openConversation, stop, clearTurns, enterEmpty],
   );
@@ -191,11 +225,13 @@ export function ChatPage() {
       const result = await ask(question, mode === 'conversation' ? activeConversationId : null);
       if (!result) return;
       if (result.kind === 'rejected') {
-        setDraftText(result.question);
-        setNotice(result.message);
         if (result.status === 404 && activeConversationId) {
           handleMissingConversation(result.message, activeConversationId);
+          return;
         }
+        // 400 / 409：把原问题放回输入框，展示服务端原因，不自动重试
+        setDraftText(result.question);
+        setNotice(result.message);
         return;
       }
       if (result.hadMeta) void refresh();
