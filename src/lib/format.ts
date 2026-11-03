@@ -74,10 +74,3 @@ export function formatMillis(value: number): string {
 export function truncateTitle(value: string, maxChars = 20): string {
   return Array.from(value.trim()).slice(0, maxChars).join('');
 }
-
-/** 临时生成唯一 key，避免在渲染期依赖自增模块变量 */
-export function createId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}

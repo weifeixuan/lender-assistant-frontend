@@ -5,7 +5,7 @@
  *   event: sources
  *   data: {...}
  *
- * 本项目的固定事件集：sources → delta* → done → error（见 AGENTS.md §5.2）。
+ * 本项目的固定事件集：meta → [sources] → delta* → done | error（见 AGENTS.md §5.2）。
  * 多行 data 按 SSE 规范用 \n 拼回；行首单个空格要剥掉。
  */
 export interface SseBlock {
