@@ -92,6 +92,27 @@ describe('useQaStream', () => {
     expect(result.current.streamingTurnId).toBeNull();
   });
 
+  it('aborts the in-flight stream when unmounted', async () => {
+    window.history.replaceState({}, '', '/');
+    const captured: { signal: AbortSignal | null } = { signal: null };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        captured.signal = init?.signal ?? null;
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+
+    const { result, unmount } = renderHook(() => useQaStream({ onMeta: vi.fn() }));
+    act(() => {
+      void result.current.ask('任意问题', null);
+    });
+    await waitFor(() => expect(captured.signal).not.toBeNull());
+
+    unmount();
+    expect(captured.signal?.aborted).toBe(true);
+  });
+
   it('marks error on an SSE error event and keeps sources', async () => {
     const { result } = renderHook(() => useQaStream({ onMeta: vi.fn() }));
     await act(async () => {

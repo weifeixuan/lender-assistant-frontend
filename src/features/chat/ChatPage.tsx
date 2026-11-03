@@ -32,6 +32,7 @@ export function ChatPage() {
     removeLocal,
     enterEmpty,
     getConversations,
+    getActiveConversationId,
   } = useConversations();
   const {
     status: historyStatus,
@@ -68,33 +69,32 @@ export function ChatPage() {
   const isHistory = Boolean(viewed && latest && viewed.id !== latest.id);
   const streaming = viewed?.status === 'streaming' || streamingTurnId !== null;
 
-  /** 历史返回时若用户已经开出新一轮，保留实时轮次，避免被历史整批覆盖 */
-  const turnsRef = useRef(turns);
-  useEffect(() => {
-    turnsRef.current = turns;
-  }, [turns]);
-
+  /**
+   * 历史返回时若用户已经切走或开出新一轮，不合并：
+   * 归属不一致直接丢弃；一致时保留实时轮次，避免被历史整批覆盖。
+   */
   const applyHistory = useCallback(
-    (messages: MessageItem[]) => {
+    (messages: MessageItem[], conversationId: string) => {
+      if (getActiveConversationId() !== conversationId) return;
       const historyTurns = buildTurns(messages);
-      const live = turnsRef.current;
-      if (live.length === 0) {
-        resetTurns(historyTurns);
-        return;
-      }
-      const liveIds = new Set(live.map((turn) => turn.id));
-      const liveRounds = new Set(
-        live.map((turn) => turn.roundId).filter((roundId): roundId is string => roundId !== null),
-      );
-      resetTurns([
-        ...historyTurns.filter(
-          (turn) =>
-            !liveIds.has(turn.id) && (turn.roundId === null || !liveRounds.has(turn.roundId)),
-        ),
-        ...live,
-      ]);
+      resetTurns((live) => {
+        if (live.length === 0) return historyTurns;
+        const liveIds = new Set(live.map((turn) => turn.id));
+        const liveRounds = new Set(
+          live
+            .map((turn) => turn.roundId)
+            .filter((roundId): roundId is string => roundId !== null),
+        );
+        return [
+          ...historyTurns.filter(
+            (turn) =>
+              !liveIds.has(turn.id) && (turn.roundId === null || !liveRounds.has(turn.roundId)),
+          ),
+          ...live,
+        ];
+      });
     },
-    [resetTurns],
+    [resetTurns, getActiveConversationId],
   );
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export function ChatPage() {
       if (isCancelled() || firstId === null) return;
       const result = await loadHistory(firstId);
       if (isCancelled()) return;
-      if (result.kind === 'ok') applyHistory(result.messages);
+      if (result.kind === 'ok') applyHistory(result.messages, firstId);
       else if (result.kind === 'missing') {
         handleMissingRef.current('该会话已不存在，已从列表移除', firstId);
       }
@@ -132,9 +132,10 @@ export function ChatPage() {
       setViewTurnId(null);
       setFocus(null);
       setNotice(null);
+      setDraftText('');
       select(conversationId);
       const result = await loadHistory(conversationId);
-      if (result.kind === 'ok') applyHistory(result.messages);
+      if (result.kind === 'ok') applyHistory(result.messages, conversationId);
       else if (result.kind === 'missing') {
         handleMissingRef.current('该会话已不存在，已从列表移除', conversationId);
       }
@@ -372,6 +373,7 @@ export function ChatPage() {
                 onCite={handleCite}
                 onRetry={(question) => handleAsk(question)}
                 onStop={stop}
+                retryDisabled={streamingTurnId !== null}
               />
             )}
           </div>

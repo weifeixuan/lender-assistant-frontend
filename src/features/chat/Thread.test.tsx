@@ -1,7 +1,22 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { QaSource } from '@/api/types';
 import { Thread } from './Thread';
 import type { Turn } from './useQaStream';
+
+function source(idx: number): QaSource {
+  return {
+    idx,
+    docTitle: `文档${idx}`,
+    sectionPath: null,
+    chunkId: idx,
+    content: '切片内容',
+    vectorDistance: 0.123,
+    keywordHits: null,
+    bothChannels: false,
+    rrfScore: '0.01234',
+  };
+}
 
 function turn(overrides: Partial<Turn>): Turn {
   return {
@@ -57,5 +72,45 @@ describe('Thread 历史态', () => {
       turn({ id: 'a3', status: 'stopped' }),
     ]);
     expect(screen.getAllByText(/耗时 —/)).toHaveLength(2);
+  });
+
+  it('does not offer retry while a round is streaming', () => {
+    const onRetry = vi.fn();
+    render(
+      <Thread
+        turns={[turn({ status: 'error', error: '模型超时' })]}
+        onCite={vi.fn()}
+        onRetry={onRetry}
+        onStop={vi.fn()}
+        retryDisabled
+      />,
+    );
+    const retry = screen.getByRole('button', { name: '重试' });
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('shows the footer for live failed/stopped rounds and hides citations only when stopped', () => {
+    renderThread([
+      turn({
+        id: 'live-failed',
+        origin: 'live',
+        status: 'error',
+        error: '模型超时',
+        sources: [source(1), source(2)],
+      }),
+      turn({
+        id: 'live-stopped',
+        origin: 'live',
+        status: 'stopped',
+        sources: [source(1), source(2)],
+      }),
+    ]);
+
+    expect(screen.getAllByText(/耗时 —/)).toHaveLength(2);
+    expect(screen.getAllByText(/引用 2 条/)).toHaveLength(1);
+    const stoppedFooter = screen.getAllByText(/耗时 —/).at(1);
+    expect(within(stoppedFooter as HTMLElement).queryByText(/引用/)).not.toBeInTheDocument();
   });
 });

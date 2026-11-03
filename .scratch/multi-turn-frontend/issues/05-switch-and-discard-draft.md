@@ -27,3 +27,11 @@
 - UI 手工验证（dev server + 全站 mock）：创建 A/B 两个会话后点击 A，主区只显示 A 且 A 高亮；A 流式中立刻切 B，B 视图无 A 的半截回答；会话内点「新对话」进入「未保存」草稿空态且列表条数不变。
 - 点击当前会话的「不重复加载」由 `handleSelect` 的同 id 短路保证；浏览器侧观察到内容与高亮无变化，但未注入网络观测以直接断言「零请求」。
 - 快速切换的防串台由 `useConversationHistory` 的递增序号 + AbortController 在单测中覆盖（先发请求返回 `cancelled`，后发请求生效）。
+
+### 代码审查修复：卸载清理、草稿丢弃与两个竞态（2026-11-03）
+
+- 两个 hook 增加卸载 abort：`useConversationHistory` 卸载时 `controllerRef.abort()` 并递增序号；`useQaStream` 卸载时 `abortRef.abort()`。单测断言卸载后 `fetch` 的 `AbortSignal.aborted === true`。
+- `openConversation` 增加 `setDraftText('')`：草稿态输入文字后切到已有会话，草稿按 PRD 4.5.1 丢弃；单测断言输入框被清空。
+- 列表加载竞态：`useConversations.load` 用 `modeRef` 判断用户是否已改变模式（点「新对话」/切会话），模式下不再把 `mode/active` 覆盖回首项；列表本身照常更新。单测：列表延迟返回期间进入草稿 → 结果返回后仍停在「草稿未保存」。
+- 历史归属校验：`applyHistory(messages, conversationId)` 先比对 `getActiveConversationId()`，不一致直接丢弃；合并逻辑改用函数式 `resetTurns`，删除 `turnsRef`。单测：首屏 A 的历史晚于首问 B 的 `meta` 返回时不并入 B。
+- 新增用例 4 条（先红后绿）；全仓 19 文件 / 92 用例通过，`typecheck`、`build` 通过。

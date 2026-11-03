@@ -72,3 +72,9 @@ $env:RAG_RESILIENCE_CHAOS = "true"; java -jar target/lender-assistant-0.1.0-SNAP
 - 浏览器实测（dev server 5173 热更新，headless Edge）：含 3 个 `STOPPED` 轮的会话脚注均为 `— · 耗时 —`；同会话 `DONE` 轮仍为 `workbuddy/deepseek-v4.1-flash · 耗时 3.6 s · 引用 4 条`；另一个含 `FAILED` 轮的会话仍为 `— · 耗时 — · 引用 4 条`。证据 `.screenshots/stopped-footer.png`。
 - 本轮按要求未新增测试，未跑 `npm test` / `typecheck` / `build`。
 
+### 代码审查修复：流式中禁用重试、实时失败轮脚注（2026-11-03）
+
+- `Thread` 新增 `retryDisabled` 属性，`ChatPage` 用 `streamingTurnId !== null` 传入：流式进行中「重试」按钮禁用，避免点击后 `abort` 掉当前这轮（选择按钮禁用而非在 `ask` 内拒绝，因为禁用态对用户可见，`ask` 的语义也不用额外承担 UI 约束）。单测断言按钮 disabled 且点击不触发 `onRetry`。
+- 脚注门禁从 `turn.meta || turn.origin === 'history'` 放宽为 `turn.status !== 'streaming'`：实时 FAILED 与历史 FAILED 表现一致，都显示 `— · 耗时 — · 引用 N 条`；`STOPPED` 仍按上次决定不显示引用条数。单测覆盖实时失败/停止两条，历史轮表现不变。
+- 全仓 92 用例通过，`typecheck`、`build` 通过。
+

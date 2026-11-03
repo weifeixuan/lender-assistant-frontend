@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/api/client';
 import { listMessages } from '@/api/conversations';
 import type { MessageItem } from '@/api/types';
@@ -20,6 +20,14 @@ export function useConversationHistory() {
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const seqRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      controllerRef.current?.abort();
+      seqRef.current += 1;
+    },
+    [],
+  );
 
   const load = useCallback(async (conversationId: string): Promise<HistoryResult> => {
     controllerRef.current?.abort();

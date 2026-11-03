@@ -8,11 +8,14 @@ export function Thread({
   onCite,
   onRetry,
   onStop,
+  retryDisabled = false,
 }: {
   turns: Turn[];
   onCite: (turnId: string, idx: number) => void;
   onRetry: (question: string) => void;
   onStop: () => void;
+  /** 流式进行中禁用「重试」，避免它 abort 掉当前这轮 */
+  retryDisabled?: boolean;
 }) {
   return (
     <div className="flex flex-col">
@@ -76,7 +79,7 @@ export function Thread({
               <div className="mt-2 rounded-input border border-dangerLine bg-dangerSoft px-3 py-2 text-small leading-relaxed text-danger">
                 <div className="flex items-start gap-2">
                   <span className="flex-1">{turn.error ?? '回答生成失败'}</span>
-                  <Button size="sm" onClick={() => onRetry(turn.question)}>
+                  <Button size="sm" disabled={retryDisabled} onClick={() => onRetry(turn.question)}>
                     重试
                   </Button>
                 </div>
@@ -92,7 +95,7 @@ export function Thread({
               </div>
             ) : null}
 
-            {turn.status !== 'streaming' && (turn.meta || turn.origin === 'history') ? (
+            {turn.status !== 'streaming' ? (
               <div className="mt-2.5 border-t border-dashed border-line pt-2 text-meta text-muted">
                 {turn.meta ? turn.meta.provider : '—'} · 耗时{' '}
                 {turn.meta ? formatMillis(turn.meta.elapsedMillis) : '—'}

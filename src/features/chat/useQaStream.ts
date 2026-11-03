@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/api/client';
 import { streamQa } from '@/api/qa';
 import type { QaDone, QaMeta, QaSource } from '@/api/types';
@@ -61,7 +61,7 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
     setTurns((previous) => previous.filter((turn) => turn.id !== id));
   }, []);
 
-  const resetTurns = useCallback((next: Turn[]) => {
+  const resetTurns = useCallback((next: Turn[] | ((previous: Turn[]) => Turn[])) => {
     setTurns(next);
   }, []);
 
@@ -72,6 +72,14 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  // 卸载时释放仍在进行的流，避免请求悬挂与卸载后的 setState
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   const ask = useCallback(
     async (rawQuestion: string, conversationId: string | null): Promise<AskResult | null> => {

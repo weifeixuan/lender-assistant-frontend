@@ -1,5 +1,5 @@
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   beginMockRound,
   finishMockRound,
@@ -25,6 +25,31 @@ describe('useConversationHistory', () => {
   beforeEach(() => {
     resetConversationsMock();
     window.history.replaceState({}, '', '/?mock=1');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('aborts the in-flight request when unmounted', async () => {
+    window.history.replaceState({}, '', '/');
+    const captured: { signal: AbortSignal | null } = { signal: null };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        captured.signal = init?.signal ?? null;
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+
+    const { result, unmount } = renderHook(() => useConversationHistory());
+    act(() => {
+      void result.current.load('conv-x');
+    });
+    await waitFor(() => expect(captured.signal).not.toBeNull());
+
+    unmount();
+    expect(captured.signal?.aborted).toBe(true);
   });
 
   it('discards the earlier response when switching quickly', async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
@@ -100,5 +100,73 @@ describe('ChatPage 启动引导', () => {
     );
     await waitFor(() => expect(screen.getByText('回答一')).toBeInTheDocument());
     expect(screen.queryByText('这个会话还没有内容')).not.toBeInTheDocument();
+  });
+
+  it('discards the draft text when switching to an existing conversation', async () => {
+    seed('会话一', '回答一');
+    renderChat();
+    await waitFor(() => expect(sidebar().getByText('会话一')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }));
+    const input = screen.getByLabelText('提问内容');
+    fireEvent.change(input, { target: { value: '还没发出去的草稿' } });
+    expect(input).toHaveValue('还没发出去的草稿');
+
+    fireEvent.click(sidebar().getByText('会话一').closest('button') as HTMLElement);
+    await waitFor(() => expect(screen.getByLabelText('提问内容')).toHaveValue(''));
+  });
+
+  it('keeps the draft mode when the list response arrives after the user switched', async () => {
+    seed('会话一', '回答一');
+    let release: ((list: ConversationSummary[]) => void) | null = null;
+    listSpy.mockImplementationOnce(
+      () =>
+        new Promise<ConversationSummary[]>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    renderChat();
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }));
+    expect(screen.getByText('草稿未保存')).toBeInTheDocument();
+
+    const list = await listConversationsMock();
+    await act(async () => {
+      release?.(list);
+    });
+
+    expect(screen.getByText('草稿未保存')).toBeInTheDocument();
+    expect(sidebar().getByText('会话一').closest('button')).not.toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+  });
+
+  it('does not merge the first screen history when the active conversation moved on', async () => {
+    const firstId = seed('会话一', '回答一');
+    const firstHistory = await listMessagesMock(firstId);
+    let releaseHistory: ((messages: MessageList) => void) | null = null;
+    historySpy.mockImplementationOnce(
+      () =>
+        new Promise<MessageList>((resolve) => {
+          releaseHistory = resolve;
+        }),
+    );
+
+    renderChat();
+    await waitFor(() => expect(sidebar().getByText('会话一')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }));
+    const input = screen.getByLabelText('提问内容');
+    fireEvent.change(input, { target: { value: '首问' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(sidebar().getByText('首问')).toBeInTheDocument());
+
+    await act(async () => {
+      releaseHistory?.(firstHistory);
+    });
+
+    await waitFor(() => expect(screen.queryByText('回答一')).not.toBeInTheDocument());
+    expect(sidebar().getByText('首问').closest('button')).toHaveAttribute('aria-current', 'true');
   });
 });
