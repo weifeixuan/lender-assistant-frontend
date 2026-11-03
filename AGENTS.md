@@ -136,7 +136,7 @@ lender-assistant-frontend/
 - 所有交互元素用语义标签（`button`/`input`/`textarea`），`button` 必须显式 `type="button"`（除提交按钮）。
 - 图标按钮必须 `aria-label`；纯装饰图标 `aria-hidden`。
 - 抽屉/弹窗：`role="dialog"`、`aria-modal="true"`、打开时聚焦容器、`Esc` 关闭、关闭后焦点回到触发元素。
-- 键盘：对话 `Enter` 发送 / `Shift+Enter` 换行；列表过滤框不劫持方向键。
+- 键盘：对话 `Enter` 发送 / `Alt+Enter` 换行（`Shift+Enter` 亦可换行）；IME 组合态下 `Enter` 不发送；列表过滤框不劫持方向键。
 - 状态变化用 `aria-live="polite"` 播报（流式正文除外，避免逐字轰炸屏幕阅读器）。
 
 ## 10. 校验与验收命令

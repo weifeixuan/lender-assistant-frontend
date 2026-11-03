@@ -1,25 +1,64 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer';
 
-describe('Composer', () => {
-  it('submits on Enter and keeps Shift+Enter for newline', () => {
-    const onSubmit = vi.fn();
-    const onChange = vi.fn();
-    render(
-      <Composer value="首套贷款成数" onChange={onChange} streaming={false} onSubmit={onSubmit} />,
-    );
+function Harness({
+  onSubmit,
+  initial = '',
+  streaming = false,
+}: {
+  onSubmit: (question: string) => void;
+  initial?: string;
+  streaming?: boolean;
+}) {
+  const [value, setValue] = useState(initial);
+  return <Composer value={value} onChange={setValue} streaming={streaming} onSubmit={onSubmit} />;
+}
 
-    fireEvent.keyDown(screen.getByRole('textbox', { name: '提问内容' }), {
-      key: 'Enter',
-    });
+describe('Composer', () => {
+  it('submits on Enter and keeps Shift+Enter as the browser default newline', () => {
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} initial="首套贷款成数" />);
+    const textarea = screen.getByRole('textbox', { name: '提问内容' });
+
+    const enterNotPrevented = fireEvent.keyDown(textarea, { key: 'Enter' });
+    expect(enterNotPrevented).toBe(false);
     expect(onSubmit).toHaveBeenCalledWith('首套贷款成数');
 
-    fireEvent.keyDown(screen.getByRole('textbox', { name: '提问内容' }), {
-      key: 'Enter',
-      shiftKey: true,
-    });
+    const shiftNotPrevented = fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    expect(shiftNotPrevented).toBe(true);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('inserts a newline at the caret on Alt+Enter without submitting', () => {
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} initial="首套贷款成数" />);
+    const textarea = screen.getByRole('textbox', { name: '提问内容' }) as HTMLTextAreaElement;
+    textarea.setSelectionRange(3, 3);
+
+    const notPrevented = fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
+
+    expect(notPrevented).toBe(false);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea.value).toBe('首套贷\n款成数');
+    expect(textarea.selectionStart).toBe(4);
+  });
+
+  it('does not submit while an IME composition is active', () => {
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} initial="首套贷款" />);
+    const textarea = screen.getByRole('textbox', { name: '提问内容' });
+
+    fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(textarea, { key: 'Enter', keyCode: 229 });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('shows the Alt+Enter hint', () => {
+    render(<Harness onSubmit={vi.fn()} />);
+    expect(screen.getByText('Enter 发送 · Alt+Enter 换行')).toBeInTheDocument();
   });
 
   it('does not submit blank input', () => {

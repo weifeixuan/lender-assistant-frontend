@@ -31,3 +31,5 @@
 - 2026-11-03：TDD 完成。新增 `qa.test.ts`(6)、`conversations.test.ts`(4)、`history.test.ts`(5)、`ConversationSidebar.test.tsx`(6)、`useQaStream.test.tsx`(3)；全仓 10 个文件 / 39 个用例通过，`typecheck` / `build` 通过，`lint` 0 error。
 - UI 手工验证（`/chat?mock=1`，dev server 实际运行）：空态欢迎语 + 输入框 + 侧栏「新对话 / 最近」且无「项目」；点击「新对话」出现「未保存」且列表不增条目；发送首问后回答逐段出现，侧栏出现同名条目并高亮。
 - 未验证项：`meta` 到达前的网络 / 超时失败路径（mock 未构造该时序，留待票 07 与真实后端联调）；`:hover` 伪类下的删除按钮显隐仅由 `group-hover` 类保证，未用真实鼠标悬停验证（删除交互在票 06 验收）。
+- 2026-11-03 输入区快捷键改造：提示文案改为「Enter 发送 · Alt+Enter 换行」；`Enter` 发送、`Alt+Enter` 在光标处插入 `\n`（`preventDefault` + 受控值改写 + `caretRef` 回填光标）、`Shift+Enter` 保留浏览器默认换行（兼容既有习惯）；IME 组合态（`isComposing` / `keyCode 229`）下 `Enter` 只上屏不发送。`Composer.test.tsx` 扩到 6 例（先红后绿），全仓 17 文件 / 80 用例通过，`typecheck` / `build` 通过。
+- 浏览器实测（headless Edge + CDP，dev server 5173 热更新生效）：Alt+Enter → 值末尾追加换行、光标落在新行首、不发送；Shift+Enter → 同样换行、不发送；合成 `isComposing` Enter → 无变化不发送；Enter → 发送成功并进入流式。`Alt+Enter` 在 Edge headless 下正常触发，未被浏览器/输入法吞掉。
