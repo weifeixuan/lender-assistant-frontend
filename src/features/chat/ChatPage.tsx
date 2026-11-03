@@ -272,7 +272,7 @@ export function ChatPage() {
           onRetryLoad={() => void loadList()}
         />
 
-        <div className="flex min-h-0 flex-col px-6 pb-4 pt-5">
+        <div className="flex min-h-0 flex-col px-3 pb-4 pt-5 sm:px-6">
           <div className="mx-auto mb-3 w-full max-w-[760px] shrink-0">
             <div className="flex items-center gap-2">
               <h1 className="m-0 text-title font-semibold tracking-tight">知识库对话</h1>

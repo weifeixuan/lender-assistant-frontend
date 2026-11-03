@@ -27,13 +27,13 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <div className="grid h-screen grid-cols-[224px_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden">
-      <aside className="flex flex-col gap-3 border-r border-line bg-panel px-3 py-4">
-        <div className="flex items-center gap-2.5 px-1 pb-1.5">
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-input bg-gradient-to-br from-brandGradA to-brandGradB text-[11px] font-bold tracking-wide text-white">
+    <div className="grid h-screen grid-cols-[56px_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden sm:grid-cols-[224px_1fr]">
+      <aside className="flex flex-col gap-3 border-r border-line bg-panel px-2 py-3 sm:px-3 sm:py-4">
+        <div className="flex items-center justify-center gap-2.5 px-1 pb-1.5 sm:justify-start">
+          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-input bg-gradient-to-br from-brandGradA to-brandGradB text-[11px] font-bold tracking-wide text-white">
             LA
           </span>
-          <div>
+          <div className="hidden sm:block">
             <div className="text-body font-semibold leading-tight">Lender Assistant</div>
             <div className="mt-px text-[10.5px] text-muted">知识库 · 内部使用</div>
           </div>
@@ -44,9 +44,10 @@ export function AppShell({
             <NavLink
               key={to}
               to={to}
+              aria-label={label}
               className={({ isActive }) =>
                 cx(
-                  'flex h-[34px] items-center gap-2 rounded-input px-2.5 text-body transition-colors',
+                  'flex h-[34px] items-center justify-center gap-2 rounded-input px-0 text-body transition-colors sm:justify-start sm:px-2.5',
                   isActive
                     ? 'bg-brandSoft font-semibold text-brand'
                     : 'text-ink2 hover:bg-panel2',
@@ -56,14 +57,14 @@ export function AppShell({
               {({ isActive }) => (
                 <>
                   <Icon className={isActive ? 'text-brand' : 'text-muted'} />
-                  {label}
+                  <span className="hidden sm:inline">{label}</span>
                 </>
               )}
             </NavLink>
           ))}
         </nav>
 
-        <div className="mt-auto rounded-card border border-line bg-panel2 p-3">
+        <div className="mt-auto hidden rounded-card border border-line bg-panel2 p-3 sm:block">
           <div className="flex items-center justify-between text-[10.5px] text-muted">
             <span>知识库概览</span>
             {summary.loading ? <span>加载中…</span> : null}
@@ -89,7 +90,7 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-col bg-bg">
-        <header className="flex h-12 shrink-0 items-center border-b border-line bg-panel px-5">
+        <header className="flex h-12 shrink-0 items-center border-b border-line bg-panel px-3 sm:px-5">
           <span className="text-body text-muted">
             知识库 <span className="px-1.5">/</span>
             <b className="font-semibold text-ink">{activeLabel}</b>
