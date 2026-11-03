@@ -259,17 +259,18 @@ export async function streamQa(
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
-  let protocolBroken = false;
+  /** 本轮已有终态：协议异常或 error 事件后不再消费，避免界面卡在流式中 */
+  let halted = false;
 
   const dispatch = (block: string) => {
-    if (protocolBroken) return;
+    if (halted) return;
     const parsed = parseSseBlock(block);
     if (!parsed) return;
     switch (parsed.event) {
       case 'meta': {
         const meta = parseMeta(parsed.data);
         if (!meta) {
-          protocolBroken = true;
+          halted = true;
           handlers.onError('响应协议异常：缺少会话元信息');
           return;
         }
@@ -291,6 +292,9 @@ export async function streamQa(
       }
       case 'error':
         handlers.onError(parsed.data);
+        // 后端推完 error 后 completeWithError 断流，浏览器可能长时间不结束读取；
+        // error 即本轮终态，立即停止消费并释放连接，否则输入区会卡在「回答生成中」
+        halted = true;
         break;
       default:
         // 契约只定义上述事件，未知事件忽略
@@ -299,7 +303,7 @@ export async function streamQa(
   };
 
   try {
-    while (!protocolBroken) {
+    while (!halted) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -308,11 +312,12 @@ export async function streamQa(
         dispatch(buffer.slice(0, separator));
         buffer = buffer.slice(separator + 2);
         separator = buffer.indexOf('\n\n');
-        if (protocolBroken) break;
+        if (halted) break;
       }
     }
-    if (buffer.trim() && !protocolBroken) dispatch(buffer);
+    if (!halted && buffer.trim()) dispatch(buffer);
   } finally {
+    if (halted) await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }

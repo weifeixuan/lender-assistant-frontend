@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetConversationsMock } from '@/api/mock';
 import { useQaStream } from './useQaStream';
 
@@ -7,6 +7,10 @@ describe('useQaStream', () => {
   beforeEach(() => {
     resetConversationsMock();
     window.history.replaceState({}, '', '/?mock=1');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('starts with a tmp id and adopts the meta assistantMessageId', async () => {
@@ -139,5 +143,34 @@ describe('useQaStream', () => {
     expect(result.current.turns[0]?.roundId).toBe(failedRoundId);
     expect(result.current.turns[1]?.status).toBe('done');
     expect(result.current.turns[1]?.roundId).not.toBe(failedRoundId);
+  });
+
+  it('clears the streaming state when a real SSE error event arrives', async () => {
+    window.history.replaceState({}, '', '/');
+    const encoder = new TextEncoder();
+    const blocks = [
+      'event: meta\ndata: {"conversationId":"conv-1","roundId":"r1","userMessageId":"u1","assistantMessageId":"a1"}',
+      'event: sources\ndata: []',
+      'event: delta\ndata: 半截正文',
+      'event: error\ndata: 问答失败：chaos: 模拟模型故障',
+    ];
+    // 只发数据不 close：模拟后端 completeWithError 后浏览器侧读取悬挂
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`${blocks.join('\n\n')}\n\n`));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+
+    const { result } = renderHook(() => useQaStream({ onMeta: vi.fn() }));
+    await act(async () => {
+      await result.current.ask('第一问', null);
+    });
+
+    const failed = result.current.turns[0];
+    expect(failed?.status).toBe('error');
+    expect(failed?.error).toBe('问答失败：chaos: 模拟模型故障');
+    expect(failed?.answer).toBe('半截正文');
+    expect(result.current.streamingTurnId).toBeNull();
   });
 });

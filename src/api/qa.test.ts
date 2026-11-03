@@ -267,6 +267,39 @@ describe('streamQa real SSE', () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ question: '首问' });
   });
 
+  it('ends the round on an SSE error event without waiting for the connection to close', async () => {
+    const blocks = [
+      'event: meta\ndata: {"conversationId":"conv-4","roundId":"r4","userMessageId":"u4","assistantMessageId":"a4"}',
+      'event: sources\ndata: []',
+      'event: delta\ndata: 半截正文',
+      'event: error\ndata: 问答失败：chaos: 模拟模型故障',
+    ];
+    const encoder = new TextEncoder();
+    // 后端 completeWithError 断流后，浏览器侧的读取可能长时间悬挂：只发数据、不 close
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(sseBody(blocks)));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+
+    const errors: string[] = [];
+    const deltas: string[] = [];
+
+    await streamQa(
+      null,
+      '任意问题',
+      emptyHandlers({
+        onDelta: (text) => deltas.push(text),
+        onError: (message) => errors.push(message),
+      }),
+      new AbortController().signal,
+    );
+
+    expect(errors).toEqual(['问答失败：chaos: 模拟模型故障']);
+    expect(deltas).toEqual(['半截正文']);
+  });
+
   it('stops consuming after a malformed meta and reports it once', async () => {
     const response = new Response(
       sseBody([
