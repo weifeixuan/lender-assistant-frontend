@@ -64,3 +64,11 @@ $env:RAG_RESILIENCE_CHAOS = "true"; java -jar target/lender-assistant-0.1.0-SNAP
 
 **截图**（`.screenshots/` 不入库）：`chaos-1-failed-bubble.png`、`chaos-2-retry-new-round.png`、`chaos-3-refreshed-history.png`。
 
+### 回填：STOPPED 轮脚注隐藏引用条数（2026-11-03）
+
+- 现象：历史 `STOPPED` 轮脚注显示 `— · 耗时 — · 引用 4 条`，中断的轮次没有完整产出，引用数无意义。
+- 改动：`src/features/chat/Thread.tsx` 脚注里按 `turn.status === 'stopped'` 跳过「引用 N 条」片段，耗时与 provider 部分保持原样；`DONE` 轮不变。
+- `FAILED` 轮**一并保持现状**（仍显示「引用 N 条」）：它与 `STOPPED` 在视觉上已明显区分（危险色块 + 服务端原因 + 「重试」），且「召回成功但生成失败」时来源条数是有用的诊断信息（AGENTS §8 也要求错误轮保留已到达来源），故不做同款隐藏。
+- 浏览器实测（dev server 5173 热更新，headless Edge）：含 3 个 `STOPPED` 轮的会话脚注均为 `— · 耗时 —`；同会话 `DONE` 轮仍为 `workbuddy/deepseek-v4.1-flash · 耗时 3.6 s · 引用 4 条`；另一个含 `FAILED` 轮的会话仍为 `— · 耗时 — · 引用 4 条`。证据 `.screenshots/stopped-footer.png`。
+- 本轮按要求未新增测试，未跑 `npm test` / `typecheck` / `build`。
+
