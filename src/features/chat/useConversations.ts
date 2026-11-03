@@ -21,16 +21,9 @@ export function useConversations() {
   /** 同步镜像：并发回调（首屏历史晚于切换返回）里读不到最新 state，只能读 ref */
   const conversationsRef = useRef<ConversationSummary[]>([]);
   const activeIdRef = useRef<string | null>(null);
-  /** 模式同步镜像：列表响应晚到时要判断用户是否已经改变了模式 */
-  const modeRef = useRef<ChatMode>('empty');
 
-  const setChatMode = useCallback((next: ChatMode) => {
-    modeRef.current = next;
-    setMode(next);
-  }, []);
-
-  /** 首次加载：非空时自动选中首项，返回该 id 供调用方加载历史 */
-  const load = useCallback(async (): Promise<string | null> => {
+  /** 拉取列表；不自动选中任何会话，模式与当前会话都由用户点击决定 */
+  const load = useCallback(async () => {
     setListStatus('loading');
     setListError(null);
     try {
@@ -38,25 +31,11 @@ export function useConversations() {
       conversationsRef.current = list;
       setConversations(list);
       setListStatus('ready');
-      // 列表返回期间用户可能已点「新对话」或切了别的会话，不能把模式覆盖回去
-      if (modeRef.current !== 'empty') return null;
-      if (list.length > 0) {
-        const first = list[0];
-        setChatMode('conversation');
-        setActiveConversationId(first.conversationId);
-        activeIdRef.current = first.conversationId;
-        return first.conversationId;
-      }
-      setChatMode('empty');
-      setActiveConversationId(null);
-      activeIdRef.current = null;
-      return null;
     } catch (cause) {
       setListStatus('error');
       setListError(cause instanceof Error ? cause.message : '会话列表加载失败');
-      return null;
     }
-  }, [setChatMode]);
+  }, []);
 
   /** 每轮结束后的静默刷新：失败不改变当前视图 */
   const refresh = useCallback(async () => {
@@ -72,20 +51,20 @@ export function useConversations() {
   }, []);
 
   const startDraft = useCallback(() => {
-    setChatMode('draft');
+    setMode('draft');
     setActiveConversationId(null);
     activeIdRef.current = null;
-  }, [setChatMode]);
+  }, []);
 
   const select = useCallback((conversationId: string) => {
-    setChatMode('conversation');
+    setMode('conversation');
     setActiveConversationId(conversationId);
     activeIdRef.current = conversationId;
-  }, [setChatMode]);
+  }, []);
 
   /** 首问收到 meta 后转正：插入乐观条目，等下一轮列表刷新覆盖 */
   const adopt = useCallback((conversationId: string, title: string) => {
-    setChatMode('conversation');
+    setMode('conversation');
     setActiveConversationId(conversationId);
     activeIdRef.current = conversationId;
     const previous = conversationsRef.current;
@@ -94,7 +73,7 @@ export function useConversations() {
     const next = [{ conversationId, title, createTime: now, updateTime: now }, ...previous];
     conversationsRef.current = next;
     setConversations(next);
-  }, [setChatMode]);
+  }, []);
 
   const removeLocal = useCallback((conversationId: string) => {
     const next = conversationsRef.current.filter(
@@ -107,10 +86,10 @@ export function useConversations() {
   }, []);
 
   const enterEmpty = useCallback(() => {
-    setChatMode('empty');
+    setMode('empty');
     setActiveConversationId(null);
     activeIdRef.current = null;
-  }, [setChatMode]);
+  }, []);
 
   /** 软删会话；404 视为已删除（幂等），其余错误原样抛出 */
   const remove = useCallback(

@@ -53,6 +53,16 @@ function sidebar() {
   return within(screen.getByRole('list'));
 }
 
+/** 进入页面后不会自动选中会话，需要显式点开才有「当前会话」 */
+async function selectConversation(title: string) {
+  const list = await screen.findByRole('list');
+  fireEvent.click(within(list).getByText(title).closest('button') as HTMLElement);
+  await waitFor(() => expect(within(list).getByText(title).closest('button')).toHaveAttribute(
+    'aria-current',
+    'true',
+  ));
+}
+
 async function openDeleteDialog(title: string) {
   const list = await screen.findByRole('list');
   const button = await within(list).findByRole('button', { name: `删除会话：${title}` });
@@ -94,6 +104,7 @@ describe('ChatPage 删除会话', () => {
     const secondId = seed('会话二', '回答二');
 
     renderChat();
+    await selectConversation('会话二');
     await openDeleteDialog('会话二');
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
 
@@ -115,6 +126,7 @@ describe('ChatPage 删除会话', () => {
     seed('会话二', '回答二');
 
     renderChat();
+    await selectConversation('会话二');
     await openDeleteDialog('会话一');
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
 
@@ -147,6 +159,7 @@ describe('ChatPage 删除会话', () => {
     const secondId = seed('会话二', '回答二');
 
     renderChat();
+    await selectConversation('会话二');
     await openDeleteDialog('会话二');
     await act(async () => {
       await deleteConversationMock(secondId);

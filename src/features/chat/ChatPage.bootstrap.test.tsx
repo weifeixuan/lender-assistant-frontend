@@ -36,7 +36,7 @@ function seed(question: string, answer: string): string {
   return round.conversationId;
 }
 
-function renderChat() {
+function renderChatRaw() {
   render(
     <MemoryRouter>
       <KnowledgeProvider>
@@ -44,8 +44,17 @@ function renderChat() {
       </KnowledgeProvider>
     </MemoryRouter>,
   );
+}
+
+/** 若侧栏仍处于收起态则展开，保证断言能查到列表 */
+function renderChat() {
+  renderChatRaw();
   const expand = screen.queryByRole('button', { name: '展开会话列表' });
   if (expand) fireEvent.click(expand);
+}
+
+function clickConversation(title: string) {
+  fireEvent.click(sidebar().getByText(title).closest('button') as HTMLElement);
 }
 
 function sidebar() {
@@ -64,6 +73,49 @@ describe('ChatPage 启动引导', () => {
     listSpy.mockImplementation(() => listConversationsMock());
   });
 
+  it('进入页面：列表渲染但不选中会话，也不请求历史', async () => {
+    seed('会话一', '回答一');
+
+    renderChat();
+
+    await waitFor(() => expect(sidebar().getByText('会话一')).toBeInTheDocument());
+    expect(sidebar().getByText('会话一').closest('button')).not.toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    expect(historySpy).not.toHaveBeenCalled();
+    expect(screen.getByText('开始一次知识库对话')).toBeInTheDocument();
+  });
+
+  it('点击第一个会话：真正请求历史并渲染正文', async () => {
+    const firstId = seed('会话一', '回答一');
+    seed('会话二', '回答二');
+
+    renderChat();
+    await waitFor(() => expect(sidebar().getByText('会话一')).toBeInTheDocument());
+    expect(historySpy).not.toHaveBeenCalled();
+
+    clickConversation('会话一');
+
+    await waitFor(() => expect(historySpy).toHaveBeenCalledWith(firstId, expect.any(AbortSignal)));
+    await waitFor(() => expect(screen.getByText('回答一')).toBeInTheDocument());
+    expect(sidebar().getByText('会话一').closest('button')).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+  });
+
+  it('左栏默认展开', async () => {
+    seed('会话一', '回答一');
+
+    renderChatRaw();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '收起会话列表' })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: '展开会话列表' })).not.toBeInTheDocument();
+  });
+
   it('历史加载 404：移除会话、切到下一项并给出提示', async () => {
     seed('会话一', '回答一');
     const secondId = seed('会话二', '回答二');
@@ -74,6 +126,8 @@ describe('ChatPage 启动引导', () => {
     );
 
     renderChat();
+    await waitFor(() => expect(sidebar().getByText('会话二')).toBeInTheDocument());
+    clickConversation('会话二');
 
     await waitFor(() => expect(sidebar().queryByText('会话二')).not.toBeInTheDocument());
     expect(sidebar().getByText('会话一').closest('button')).toHaveAttribute('aria-current', 'true');
@@ -84,7 +138,7 @@ describe('ChatPage 启动引导', () => {
     expect(screen.queryByText('回答二')).not.toBeInTheDocument();
   });
 
-  it('列表加载失败后重试：选中首项并加载历史，不停在空态', async () => {
+  it('列表加载失败后重试：恢复列表并停在空态，点条目才加载历史', async () => {
     seed('会话一', '回答一');
     listSpy.mockRejectedValueOnce(new ApiError('会话列表加载失败', 500, 500));
 
@@ -94,12 +148,21 @@ describe('ChatPage 启动引导', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
 
     await waitFor(() => expect(sidebar().getByText('会话一')).toBeInTheDocument());
+    expect(sidebar().getByText('会话一').closest('button')).not.toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    expect(screen.getByText('开始一次知识库对话')).toBeInTheDocument();
+    expect(historySpy).not.toHaveBeenCalled();
+
+    clickConversation('会话一');
+
+    await waitFor(() => expect(screen.getByText('回答一')).toBeInTheDocument());
+    expect(screen.queryByText('这个会话还没有内容')).not.toBeInTheDocument();
     expect(sidebar().getByText('会话一').closest('button')).toHaveAttribute(
       'aria-current',
       'true',
     );
-    await waitFor(() => expect(screen.getByText('回答一')).toBeInTheDocument());
-    expect(screen.queryByText('这个会话还没有内容')).not.toBeInTheDocument();
   });
 
   it('discards the draft text when switching to an existing conversation', async () => {
@@ -142,7 +205,7 @@ describe('ChatPage 启动引导', () => {
     );
   });
 
-  it('does not merge the first screen history when the active conversation moved on', async () => {
+  it('晚到的历史响应不会并进随后创建的新会话', async () => {
     const firstId = seed('会话一', '回答一');
     const firstHistory = await listMessagesMock(firstId);
     let releaseHistory: ((messages: MessageList) => void) | null = null;
@@ -156,6 +219,7 @@ describe('ChatPage 启动引导', () => {
     renderChat();
     await waitFor(() => expect(sidebar().getByText('会话一')).toBeInTheDocument());
 
+    clickConversation('会话一');
     fireEvent.click(screen.getByRole('button', { name: '新对话' }));
     const input = screen.getByLabelText('提问内容');
     fireEvent.change(input, { target: { value: '首问' } });

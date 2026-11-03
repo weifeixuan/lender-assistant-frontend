@@ -51,6 +51,18 @@ function sidebar() {
   return within(screen.getByRole('list'));
 }
 
+/** 进入页面后不会自动选中会话，需要显式点开才有「当前会话」 */
+async function selectConversation(title: string) {
+  const list = await screen.findByRole('list');
+  fireEvent.click(within(list).getByText(title).closest('button') as HTMLElement);
+  await waitFor(() =>
+    expect(within(list).getByText(title).closest('button')).toHaveAttribute(
+      'aria-current',
+      'true',
+    ),
+  );
+}
+
 function ask(question: string) {
   const input = screen.getByLabelText('提问内容');
   fireEvent.change(input, { target: { value: question } });
@@ -72,6 +84,7 @@ describe('ChatPage 错误闭环', () => {
 
     renderChat();
     await waitFor(() => expect(sidebar().getByText('会话二')).toBeInTheDocument());
+    await selectConversation('会话二');
     ask('404 已删除会话');
 
     await waitFor(() => expect(sidebar().queryByText('会话二')).not.toBeInTheDocument());
@@ -89,6 +102,7 @@ describe('ChatPage 错误闭环', () => {
 
     renderChat();
     await waitFor(() => expect(sidebar().getByText('会话二')).toBeInTheDocument());
+    await selectConversation('会话二');
     ask('409 正在生成');
 
     await waitFor(() =>

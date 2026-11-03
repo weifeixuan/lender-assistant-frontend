@@ -48,7 +48,7 @@ export function ChatPage() {
   } = useConversationController();
 
   const [traceCollapsed, setTraceCollapsed] = useState(() => window.innerWidth < 1280);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 1280);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 

@@ -26,7 +26,7 @@ describe('useConversations', () => {
     window.history.replaceState({}, '', '/?mock=1');
   });
 
-  it('loads the list and selects the first conversation', async () => {
+  it('loads the list without selecting any conversation', async () => {
     const first = seed('会话一');
     const second = seed('会话二');
     const { result } = renderHook(() => useConversations());
@@ -35,8 +35,9 @@ describe('useConversations', () => {
       await result.current.load();
     });
 
-    await waitFor(() => expect(result.current.mode).toBe('conversation'));
-    expect(result.current.activeConversationId).toBe(second);
+    await waitFor(() => expect(result.current.listStatus).toBe('ready'));
+    expect(result.current.mode).toBe('empty');
+    expect(result.current.activeConversationId).toBeNull();
     expect(result.current.conversations.map((item) => item.conversationId)).toEqual([
       second,
       first,
@@ -77,6 +78,11 @@ describe('useConversations', () => {
     const { result } = renderHook(() => useConversations());
     await act(async () => {
       await result.current.load();
+    });
+    expect(result.current.activeConversationId).toBeNull();
+
+    act(() => {
+      result.current.select(existing);
     });
     expect(result.current.activeConversationId).toBe(existing);
 

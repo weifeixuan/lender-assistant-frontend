@@ -80,27 +80,16 @@ export function useConversationController() {
     [resetTurns, getActiveConversationId],
   );
 
-  /** 启动引导：拉列表 → 有首项则加载其历史；初始加载与列表「重试」共用 */
-  const bootstrap = useCallback(
-    async (isCancelled: () => boolean = () => false) => {
-      const firstId = await loadList();
-      if (isCancelled() || firstId === null) return;
-      const result = await loadHistory(firstId);
-      if (isCancelled()) return;
-      if (result.kind === 'ok') applyHistory(result.messages, firstId);
-      else if (result.kind === 'missing') {
-        handleMissingRef.current('该会话已不存在，已从列表移除', firstId);
-      }
-    },
-    [loadList, loadHistory, applyHistory],
-  );
+  /**
+   * 启动引导：只拉列表渲染侧栏，不自动选中任何会话，主区保持空态。
+   * 列表失败后点「重试」与首次进入走同一套规则；用户点条目时才加载历史。
+   */
+  const bootstrap = useCallback(async () => {
+    await loadList();
+  }, [loadList]);
 
   useEffect(() => {
-    let cancelled = false;
-    void bootstrap(() => cancelled);
-    return () => {
-      cancelled = true;
-    };
+    void bootstrap();
   }, [bootstrap]);
 
   const openConversation = useCallback(
@@ -149,10 +138,15 @@ export function useConversationController() {
 
   const selectConversation = useCallback(
     (conversationId: string) => {
-      if (conversationId === activeConversationId && mode === 'conversation') return;
+      // 只有「当前会话的内容确实属于它」时才短路；历史加载失败时再点一次要能重试
+      const sameLoaded =
+        mode === 'conversation' &&
+        conversationId === activeConversationId &&
+        (historyStatus === 'ready' || turns.length > 0);
+      if (sameLoaded) return;
       void openConversation(conversationId);
     },
-    [activeConversationId, mode, openConversation],
+    [mode, activeConversationId, historyStatus, turns.length, openConversation],
   );
 
   const newDraft = useCallback(() => {
