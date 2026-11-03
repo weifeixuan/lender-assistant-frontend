@@ -138,6 +138,8 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
         );
       } catch (cause) {
         if (isAbort(cause)) {
+          // 本轮已收到 done/error 时，abort 只是释放连接，不能把已完成的轮次降级成 stopped
+          if (finalStatus !== 'streaming') return { kind: 'finished', status: finalStatus, hadMeta };
           patch(currentId, (turn) => ({ ...turn, status: 'stopped' }));
           return { kind: 'finished', status: 'stopped', hadMeta };
         }
@@ -162,7 +164,13 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
         }
       }
 
-      return { kind: 'finished', status: finalStatus === 'streaming' ? 'done' : finalStatus, hadMeta };
+      // 流正常关闭但没等到 done/error：本轮没有终态，不能残留 streaming（否则输入区永久禁用）
+      if (finalStatus === 'streaming') {
+        finalStatus = 'error';
+        patch(currentId, (turn) => ({ ...turn, status: 'error', error: '连接提前结束，请重试' }));
+      }
+
+      return { kind: 'finished', status: finalStatus, hadMeta };
     },
     [patch, removeTurn],
   );

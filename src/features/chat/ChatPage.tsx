@@ -31,6 +31,7 @@ export function ChatPage() {
     remove,
     removeLocal,
     enterEmpty,
+    getConversations,
   } = useConversations();
   const {
     status: historyStatus,
@@ -49,6 +50,10 @@ export function ChatPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  /** 历史 404 的处理函数要能被 openConversation / bootstrap 复用，但两者存在引用环，用 ref 打通 */
+  const handleMissingRef = useRef<(message: string, conversationId: string) => void>(
+    () => undefined,
+  );
 
   const { turns, streamingTurnId, ask, stop, resetTurns, clearTurns } = useQaStream({
     onMeta: (meta) => {
@@ -97,19 +102,28 @@ export function ChatPage() {
     if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
   }, [turns]);
 
+  /** 启动引导：拉列表 → 有首项则加载其历史；初始加载与列表「重试」共用 */
+  const bootstrap = useCallback(
+    async (isCancelled: () => boolean = () => false) => {
+      const firstId = await loadList();
+      if (isCancelled() || firstId === null) return;
+      const result = await loadHistory(firstId);
+      if (isCancelled()) return;
+      if (result.kind === 'ok') applyHistory(result.messages);
+      else if (result.kind === 'missing') {
+        handleMissingRef.current('该会话已不存在，已从列表移除', firstId);
+      }
+    },
+    [loadList, loadHistory, applyHistory],
+  );
+
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const firstId = await loadList();
-      if (cancelled || firstId === null) return;
-      const result = await loadHistory(firstId);
-      if (cancelled || result.kind !== 'ok') return;
-      applyHistory(result.messages);
-    })();
+    void bootstrap(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [loadList, loadHistory, applyHistory]);
+  }, [bootstrap]);
 
   const openConversation = useCallback(
     async (conversationId: string) => {
@@ -121,6 +135,9 @@ export function ChatPage() {
       select(conversationId);
       const result = await loadHistory(conversationId);
       if (result.kind === 'ok') applyHistory(result.messages);
+      else if (result.kind === 'missing') {
+        handleMissingRef.current('该会话已不存在，已从列表移除', conversationId);
+      }
     },
     [stop, clearTurns, select, loadHistory, applyHistory],
   );
@@ -128,7 +145,7 @@ export function ChatPage() {
   const handleMissingConversation = useCallback(
     (message: string, conversationId: string) => {
       removeLocal(conversationId);
-      const rest = list.filter((item) => item.conversationId !== conversationId);
+      const rest = getConversations().filter((item) => item.conversationId !== conversationId);
       const next = rest[0];
       if (next) {
         void (async () => {
@@ -144,8 +161,12 @@ export function ChatPage() {
       enterEmpty();
       setNotice(message);
     },
-    [removeLocal, list, openConversation, stop, clearTurns, enterEmpty],
+    [removeLocal, getConversations, openConversation, stop, clearTurns, enterEmpty],
   );
+
+  useEffect(() => {
+    handleMissingRef.current = handleMissingConversation;
+  }, [handleMissingConversation]);
 
   const handleSelect = (conversationId: string) => {
     if (conversationId === activeConversationId && mode === 'conversation') return;
@@ -269,7 +290,7 @@ export function ChatPage() {
           onNewDraft={handleNewDraft}
           onSelect={handleSelect}
           onDelete={handleRequestDelete}
-          onRetryLoad={() => void loadList()}
+          onRetryLoad={() => void bootstrap()}
         />
 
         <div className="flex min-h-0 flex-col px-3 pb-4 pt-5 sm:px-6">

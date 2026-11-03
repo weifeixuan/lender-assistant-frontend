@@ -287,7 +287,14 @@ export async function streamQa(
         break;
       case 'done': {
         const done = parseDone(parsed.data);
-        if (done) handlers.onDone(done);
+        if (!done) {
+          halted = true;
+          handlers.onError('响应协议异常：缺少完成信息');
+          return;
+        }
+        handlers.onDone(done);
+        // done 即本轮终态：停止消费并释放连接，避免后端迟迟不 close 时界面卡在流式中
+        halted = true;
         break;
       }
       case 'error':

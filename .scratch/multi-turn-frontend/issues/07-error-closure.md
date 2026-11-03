@@ -30,3 +30,10 @@
 - mock 的 404 关键词现在会同时从内存仓库删除该会话，保证「刷新列表不会保留它」；真实后端联调时该断言以真实 404 语义为准。
 - 未在浏览器手工验证 404/409/断网 UI（票 07 不在 UI 必验清单），由上述集成测试 + 既有 `useQaStream`/`Thread` 单测覆盖。
 
+### 代码审查修复：历史 404、列表重试与 SSE 终态（2026-11-03）
+
+- 历史加载 404 未接上：`useConversationHistory.load` 返回 `{ kind: 'missing' }`，但启动加载与切换会话两处调用方都只处理 `ok`，失效会话既不从列表移除也不提示。现在两处都复用 `handleMissingConversation('该会话已不存在，已从列表移除', id)`（`ChatPage.tsx`）；`useConversations` 增加同步 getter `getConversations()`，避免并发回调读到过期的列表 state。
+- 列表加载失败后的「重试」只重拉列表：新增 `bootstrap`（拉列表 → 有首项则加载历史），初始加载与侧栏「重试」共用；重试成功后首项自动选中且历史已渲染，不再停在「这个会话还没有内容」。
+- SSE 缺终态导致输入区永久禁用：`qa.ts` 的 `done` 分支现在置 `halted` 并在 `finally` 中 `cancel()` 释放连接；`parseDone` 失败按协议异常走 `onError`。`useQaStream` 在 `streamQa` 正常返回但 `finalStatus === 'streaming'` 时把该轮标为 `error`（「连接提前结束，请重试」）；`catch` 中仅在尚未进入 `done`/`error` 时才写 `stopped`，避免 abort 把已完成轮次降级。
+- 新增 `ChatPage.bootstrap.test.tsx`(2)、`useQaStream.terminal.test.tsx`(3)：先红后绿。全仓 19 文件 / 85 用例通过，`typecheck`、`build` 通过。
+
