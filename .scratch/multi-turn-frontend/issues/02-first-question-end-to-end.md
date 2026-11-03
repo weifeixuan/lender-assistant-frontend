@@ -33,3 +33,9 @@
 - 未验证项：`meta` 到达前的网络 / 超时失败路径（mock 未构造该时序，留待票 07 与真实后端联调）；`:hover` 伪类下的删除按钮显隐仅由 `group-hover` 类保证，未用真实鼠标悬停验证（删除交互在票 06 验收）。
 - 2026-11-03 输入区快捷键改造：提示文案改为「Enter 发送 · Alt+Enter 换行」；`Enter` 发送、`Alt+Enter` 在光标处插入 `\n`（`preventDefault` + 受控值改写 + `caretRef` 回填光标）、`Shift+Enter` 保留浏览器默认换行（兼容既有习惯）；IME 组合态（`isComposing` / `keyCode 229`）下 `Enter` 只上屏不发送。`Composer.test.tsx` 扩到 6 例（先红后绿），全仓 17 文件 / 80 用例通过，`typecheck` / `build` 通过。
 - 浏览器实测（headless Edge + CDP，dev server 5173 热更新生效）：Alt+Enter → 值末尾追加换行、光标落在新行首、不发送；Shift+Enter → 同样换行、不发送；合成 `isComposing` Enter → 无变化不发送；Enter → 发送成功并进入流式。`Alt+Enter` 在 Edge headless 下正常触发，未被浏览器/输入法吞掉。
+
+### 代码审查修复：ChatPage 拆分（2026-11-03）
+
+- 新增 `src/features/chat/useConversationController.ts`（303 行）：会话列表/历史/问答/删除/提示/草稿与 `viewTurnId`、`focus` 的编排全部下沉，含 `bootstrap`、`openConversation`、`handleMissingConversation`、`confirmDelete`、`askQuestion` 等。
+- `ChatPage.tsx` 由 421 行降到 213 行，只保留渲染编排（布局/侧栏与追踪栏折叠/滚动跟随），交互与渲染结果不变。
+- 全仓 92 用例通过，`typecheck`、`build` 通过；本轮未新增测试（纯搬家，既有用例覆盖）。

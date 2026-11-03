@@ -1,273 +1,65 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button, EmptyState, Spinner, Tag } from '@/components/ui';
 import { ChatIcon } from '@/components/icons';
-import type { ConversationSummary, MessageItem } from '@/api/types';
 import { useKnowledge } from '@/lib/knowledge';
-import { formatThousands, truncateTitle } from '@/lib/format';
+import { formatThousands } from '@/lib/format';
 import { ConversationSidebar } from './ConversationSidebar';
 import { Composer } from './Composer';
 import { Thread } from './Thread';
 import { TracePanel } from './TracePanel';
-import { buildTurns } from './history';
-import { useConversationHistory } from './useConversationHistory';
-import { useConversations } from './useConversations';
-import { useQaStream } from './useQaStream';
+import { useConversationController } from './useConversationController';
 
 export function ChatPage() {
   const { docCount, chunkCount, lastIngestedAt, loading } = useKnowledge();
   const {
     mode,
-    activeConversationId,
     conversations: list,
+    activeConversationId,
     listStatus,
     listError,
-    load: loadList,
-    refresh,
-    startDraft,
-    select,
-    adopt,
-    remove,
-    removeLocal,
-    enterEmpty,
-    getConversations,
-    getActiveConversationId,
-  } = useConversations();
-  const {
-    status: historyStatus,
-    error: historyError,
-    load: loadHistory,
-  } = useConversationHistory();
-  const pendingQuestion = useRef('');
-  const [draftText, setDraftText] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
+    historyStatus,
+    historyError,
+    turns,
+    streamingTurnId,
+    streaming,
+    viewed,
+    roundIndex,
+    isHistory,
+    focus,
+    draftText,
+    setDraftText,
+    notice,
+    setNotice,
+    deleteTarget,
+    deleting,
+    deleteError,
+    bootstrap,
+    selectConversation,
+    newDraft,
+    askQuestion,
+    stop,
+    selectCitation,
+    retryHistory,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
+  } = useConversationController();
+
   const [traceCollapsed, setTraceCollapsed] = useState(() => window.innerWidth < 1280);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 1280);
-  const [viewTurnId, setViewTurnId] = useState<string | null>(null);
-  const [focus, setFocus] = useState<{ idx: number; seq: number } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  /** 历史 404 的处理函数要能被 openConversation / bootstrap 复用，但两者存在引用环，用 ref 打通 */
-  const handleMissingRef = useRef<(message: string, conversationId: string) => void>(
-    () => undefined,
-  );
-
-  const { turns, streamingTurnId, ask, stop, resetTurns, clearTurns } = useQaStream({
-    onMeta: (meta) => {
-      adopt(meta.conversationId, truncateTitle(pendingQuestion.current));
-      void refresh();
-    },
-  });
-
-  const latest = turns.length > 0 ? turns[turns.length - 1] : null;
-  const viewed = (viewTurnId ? turns.find((turn) => turn.id === viewTurnId) : latest) ?? latest;
-  const roundIndex = viewed ? turns.findIndex((turn) => turn.id === viewed.id) + 1 : 0;
-  const isHistory = Boolean(viewed && latest && viewed.id !== latest.id);
-  const streaming = viewed?.status === 'streaming' || streamingTurnId !== null;
-
-  /**
-   * 历史返回时若用户已经切走或开出新一轮，不合并：
-   * 归属不一致直接丢弃；一致时保留实时轮次，避免被历史整批覆盖。
-   */
-  const applyHistory = useCallback(
-    (messages: MessageItem[], conversationId: string) => {
-      if (getActiveConversationId() !== conversationId) return;
-      const historyTurns = buildTurns(messages);
-      resetTurns((live) => {
-        if (live.length === 0) return historyTurns;
-        const liveIds = new Set(live.map((turn) => turn.id));
-        const liveRounds = new Set(
-          live
-            .map((turn) => turn.roundId)
-            .filter((roundId): roundId is string => roundId !== null),
-        );
-        return [
-          ...historyTurns.filter(
-            (turn) =>
-              !liveIds.has(turn.id) && (turn.roundId === null || !liveRounds.has(turn.roundId)),
-          ),
-          ...live,
-        ];
-      });
-    },
-    [resetTurns, getActiveConversationId],
-  );
 
   useEffect(() => {
     const element = threadRef.current;
     if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
   }, [turns]);
 
-  /** 启动引导：拉列表 → 有首项则加载其历史；初始加载与列表「重试」共用 */
-  const bootstrap = useCallback(
-    async (isCancelled: () => boolean = () => false) => {
-      const firstId = await loadList();
-      if (isCancelled() || firstId === null) return;
-      const result = await loadHistory(firstId);
-      if (isCancelled()) return;
-      if (result.kind === 'ok') applyHistory(result.messages, firstId);
-      else if (result.kind === 'missing') {
-        handleMissingRef.current('该会话已不存在，已从列表移除', firstId);
-      }
-    },
-    [loadList, loadHistory, applyHistory],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    void bootstrap(() => cancelled);
-    return () => {
-      cancelled = true;
-    };
-  }, [bootstrap]);
-
-  const openConversation = useCallback(
-    async (conversationId: string) => {
-      stop();
-      clearTurns();
-      setViewTurnId(null);
-      setFocus(null);
-      setNotice(null);
-      setDraftText('');
-      select(conversationId);
-      const result = await loadHistory(conversationId);
-      if (result.kind === 'ok') applyHistory(result.messages, conversationId);
-      else if (result.kind === 'missing') {
-        handleMissingRef.current('该会话已不存在，已从列表移除', conversationId);
-      }
-    },
-    [stop, clearTurns, select, loadHistory, applyHistory],
-  );
-
-  const handleMissingConversation = useCallback(
-    (message: string, conversationId: string) => {
-      removeLocal(conversationId);
-      const rest = getConversations().filter((item) => item.conversationId !== conversationId);
-      const next = rest[0];
-      if (next) {
-        void (async () => {
-          await openConversation(next.conversationId);
-          setNotice(message);
-        })();
-        return;
-      }
-      stop();
-      clearTurns();
-      setViewTurnId(null);
-      setFocus(null);
-      enterEmpty();
-      setNotice(message);
-    },
-    [removeLocal, getConversations, openConversation, stop, clearTurns, enterEmpty],
-  );
-
-  useEffect(() => {
-    handleMissingRef.current = handleMissingConversation;
-  }, [handleMissingConversation]);
-
-  const handleSelect = (conversationId: string) => {
-    if (conversationId === activeConversationId && mode === 'conversation') return;
-    void openConversation(conversationId);
-  };
-
-  const handleNewDraft = () => {
-    stop();
-    clearTurns();
-    setDraftText('');
-    setViewTurnId(null);
-    setFocus(null);
-    setNotice(null);
-    startDraft();
-  };
-
-  const handleRequestDelete = (conversation: ConversationSummary) => {
-    setDeleteError(null);
-    setDeleteTarget(conversation);
-  };
-
-  const handleCancelDelete = () => {
-    if (deleting) return;
-    setDeleteTarget(null);
-    setDeleteError(null);
-  };
-
-  const handleConfirmDelete = () => {
-    const target = deleteTarget;
-    if (!target || deleting) return;
-    const deletingCurrent =
-      target.conversationId === activeConversationId && mode === 'conversation';
-    // 确认后才中止流式并发出请求；取消不会打断当前回答
-    if (deletingCurrent) stop();
-    setDeleting(true);
-    setDeleteError(null);
-
-    void (async () => {
-      try {
-        const outcome = await remove(target.conversationId);
-        setDeleting(false);
-        setDeleteTarget(null);
-        const removedMessage = outcome === 'missing' ? '该会话已不存在，已从列表移除' : null;
-
-        if (!deletingCurrent) {
-          if (removedMessage) setNotice(removedMessage);
-          return;
-        }
-
-        const rest = list.filter((item) => item.conversationId !== target.conversationId);
-        const next = rest[0];
-        if (next) {
-          await openConversation(next.conversationId);
-        } else {
-          clearTurns();
-          setViewTurnId(null);
-          setFocus(null);
-          enterEmpty();
-        }
-        if (removedMessage) setNotice(removedMessage);
-      } catch (cause) {
-        setDeleting(false);
-        setDeleteError(cause instanceof Error ? cause.message : '删除失败，请重试');
-      }
-    })();
-  };
-
-  const handleAsk = (question: string) => {
-    setViewTurnId(null);
-    setFocus(null);
-    setNotice(null);
-    setDraftText('');
-    pendingQuestion.current = question;
-    if (mode === 'empty') startDraft();
-
-    void (async () => {
-      const result = await ask(question, mode === 'conversation' ? activeConversationId : null);
-      if (!result) return;
-      if (result.kind === 'rejected') {
-        if (result.status === 404 && activeConversationId) {
-          handleMissingConversation(result.message, activeConversationId);
-          return;
-        }
-        // 400 / 409：把原问题放回输入框，展示服务端原因，不自动重试
-        setDraftText(result.question);
-        setNotice(result.message);
-        return;
-      }
-      if (result.hadMeta) void refresh();
-    })();
-  };
-
   const handleCite = (turnId: string, idx: number) => {
-    setViewTurnId(turnId);
-    setFocus({ idx, seq: (focus?.seq ?? 0) + 1 });
+    selectCitation(turnId, idx);
     setTraceCollapsed(false);
-  };
-
-  const handleRetryHistory = () => {
-    if (activeConversationId) void openConversation(activeConversationId);
   };
 
   return (
@@ -288,9 +80,9 @@ export function ChatPage() {
           listError={listError}
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((value) => !value)}
-          onNewDraft={handleNewDraft}
-          onSelect={handleSelect}
-          onDelete={handleRequestDelete}
+          onNewDraft={newDraft}
+          onSelect={selectConversation}
+          onDelete={requestDelete}
           onRetryLoad={() => void bootstrap()}
         />
 
@@ -315,7 +107,7 @@ export function ChatPage() {
               className="mx-auto mb-3 flex w-full max-w-[760px] items-start gap-2 rounded-input border border-dangerLine bg-dangerSoft px-3 py-2 text-small text-danger"
             >
               <span className="flex-1">{historyError ?? '历史消息加载失败'}</span>
-              <Button size="sm" onClick={handleRetryHistory}>
+              <Button size="sm" onClick={retryHistory}>
                 重试
               </Button>
             </div>
@@ -371,7 +163,7 @@ export function ChatPage() {
               <Thread
                 turns={turns}
                 onCite={handleCite}
-                onRetry={(question) => handleAsk(question)}
+                onRetry={askQuestion}
                 onStop={stop}
                 retryDisabled={streamingTurnId !== null}
               />
@@ -383,7 +175,7 @@ export function ChatPage() {
               value={draftText}
               onChange={setDraftText}
               streaming={streaming}
-              onSubmit={handleAsk}
+              onSubmit={askQuestion}
             />
           </div>
         </div>
@@ -413,8 +205,8 @@ export function ChatPage() {
         confirmText="删除"
         busy={deleting}
         error={deleteError}
-        onCancel={handleCancelDelete}
-        onConfirm={handleConfirmDelete}
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
       />
     </AppShell>
   );
