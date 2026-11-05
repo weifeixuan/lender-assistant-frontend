@@ -11,11 +11,27 @@ import {
   mockQaSources,
 } from './mock';
 import { parseSseBlock } from './sse';
-import type { QaDone, QaMeta, QaSource } from './types';
+import type {
+  QaDone,
+  QaMeta,
+  QaPlan,
+  QaPlanStep,
+  QaRoute,
+  QaRouteKind,
+  QaSource,
+  QaStep,
+  QaStepStatus,
+} from './types';
 
 export interface QaHandlers {
   /** 首个事件：后端懒创建会话后回传本轮真实 id */
   onMeta: (meta: QaMeta) => void;
+  /** PLAN 路径才有：路由结论 */
+  onRoute: (route: QaRoute) => void;
+  /** PLAN 路径才有：计划步骤与降级标记 */
+  onPlan: (plan: QaPlan) => void;
+  /** PLAN 路径才有：按 stepId 覆盖的单步进度 */
+  onStep: (step: QaStep) => void;
   onSources: (sources: QaSource[]) => void;
   onDelta: (text: string) => void;
   onDone: (done: QaDone) => void;
@@ -52,6 +68,81 @@ export function parseMeta(data: string): QaMeta | null {
     return null;
   }
   return { conversationId, roundId, userMessageId, assistantMessageId };
+}
+
+function isRouteKind(value: unknown): value is QaRouteKind {
+  return value === 'IRRELEVANT' || value === 'KNOWLEDGE' || value === 'PLAN';
+}
+
+function isStepStatus(value: unknown): value is QaStepStatus {
+  return (
+    value === 'PENDING' ||
+    value === 'RUNNING' ||
+    value === 'DONE' ||
+    value === 'DEGRADED' ||
+    value === 'FAILED' ||
+    value === 'SKIPPED'
+  );
+}
+
+function parseJson(data: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+/** route：未知取值按「不认识的事件」忽略，交给后端 fail-open 保证 */
+function parseRoute(data: string): QaRoute | null {
+  const payload = parseJson(data);
+  if (!isRecord(payload)) return null;
+  const { route, confidence } = payload;
+  if (!isRouteKind(route) || typeof confidence !== 'number') return null;
+  return { route, confidence };
+}
+
+function parsePlanStep(item: unknown): QaPlanStep | null {
+  if (!isRecord(item)) return null;
+  const { stepId, order, title, tool } = item;
+  if (
+    typeof stepId !== 'string' ||
+    !stepId ||
+    typeof order !== 'number' ||
+    typeof title !== 'string' ||
+    typeof tool !== 'string'
+  ) {
+    return null;
+  }
+  return { stepId, order, title, tool };
+}
+
+function parsePlan(data: string): QaPlan | null {
+  const payload = parseJson(data);
+  if (!isRecord(payload)) return null;
+  const { degraded, goal, steps } = payload;
+  if (typeof degraded !== 'boolean' || typeof goal !== 'string' || !Array.isArray(steps)) {
+    return null;
+  }
+  const parsed: QaPlanStep[] = [];
+  for (const item of steps) {
+    const step = parsePlanStep(item);
+    if (!step) return null;
+    parsed.push(step);
+  }
+  return { degraded, goal, steps: parsed };
+}
+
+function parseStep(data: string): QaStep | null {
+  const payload = parseJson(data);
+  if (!isRecord(payload)) return null;
+  const { stepId, status, elapsedMillis } = payload;
+  if (typeof stepId !== 'string' || !stepId || !isStepStatus(status)) return null;
+  return {
+    stepId,
+    status,
+    elapsedMillis: typeof elapsedMillis === 'number' ? elapsedMillis : null,
+  };
 }
 
 /** 只做最小形状校验，字段语义错误由后端契约保证 */
@@ -104,9 +195,7 @@ function isAbort(cause: unknown): boolean {
 }
 
 function messageOf(cause: unknown): string {
-  return cause instanceof ApiError
-    ? cause.message
-    : '连接中断，请确认后端服务已启动后重试';
+  return cause instanceof ApiError ? cause.message : '连接中断，请确认后端服务已启动后重试';
 }
 
 /**
@@ -249,7 +338,8 @@ export async function streamQa(
     let message = `请求失败（HTTP ${response.status}）`;
     try {
       const payload: unknown = JSON.parse(text);
-      if (isRecord(payload) && typeof payload.msg === 'string' && payload.msg) message = payload.msg;
+      if (isRecord(payload) && typeof payload.msg === 'string' && payload.msg)
+        message = payload.msg;
     } catch {
       // 非 JSON 错误体，保留状态码文案
     }
@@ -275,6 +365,21 @@ export async function streamQa(
           return;
         }
         handlers.onMeta(meta);
+        break;
+      }
+      case 'route': {
+        const route = parseRoute(parsed.data);
+        if (route) handlers.onRoute(route);
+        break;
+      }
+      case 'plan': {
+        const plan = parsePlan(parsed.data);
+        if (plan) handlers.onPlan(plan);
+        break;
+      }
+      case 'step': {
+        const step = parseStep(parsed.data);
+        if (step) handlers.onStep(step);
         break;
       }
       case 'sources': {

@@ -18,11 +18,7 @@ export function buildTurns(messages: MessageItem[]): Turn[] {
     const assistant = group.assistant;
     const sources = assistant.sources ?? [];
     const status: TurnStatus =
-      assistant.status === 'DONE'
-        ? 'done'
-        : assistant.status === 'FAILED'
-          ? 'error'
-          : 'stopped';
+      assistant.status === 'DONE' ? 'done' : assistant.status === 'FAILED' ? 'error' : 'stopped';
 
     turns.push({
       id: assistant.messageId,
@@ -42,6 +38,9 @@ export function buildTurns(messages: MessageItem[]): Turn[] {
               sourceCount: sources.length,
             }
           : null,
+      route: null,
+      plan: null,
+      steps: [],
       origin: 'history',
       createTime: assistant.createTime,
     });

@@ -3,7 +3,7 @@ import { ApiError } from './client';
 import { listConversationsMock, listMessagesMock, resetConversationsMock } from './mock';
 import { parseMeta, streamQa } from './qa';
 import { DEV_USER_ID } from '@/lib/identity';
-import type { QaDone, QaMeta, QaSource } from './types';
+import type { QaDone, QaMeta, QaPlan, QaRoute, QaSource, QaStep } from './types';
 
 describe('parseMeta', () => {
   it('accepts all four non-empty fields', () => {
@@ -26,9 +26,7 @@ describe('parseMeta', () => {
   it('rejects missing, empty or non-string fields', () => {
     expect(parseMeta('{}')).toBeNull();
     expect(
-      parseMeta(
-        JSON.stringify({ conversationId: 'c1', roundId: 'r1', userMessageId: 'u1' }),
-      ),
+      parseMeta(JSON.stringify({ conversationId: 'c1', roundId: 'r1', userMessageId: 'u1' })),
     ).toBeNull();
     expect(
       parseMeta(
@@ -77,6 +75,9 @@ describe('streamQa mock', () => {
           events.push('meta');
           metas.push(value);
         },
+        onRoute: () => undefined,
+        onPlan: () => undefined,
+        onStep: () => undefined,
         onSources: (value) => {
           events.push('sources');
           sources = value;
@@ -112,6 +113,23 @@ describe('streamQa mock', () => {
     expect(history.messages[1]?.sources).toHaveLength(4);
   });
 
+  it('does not emit route, plan or step in mock mode', async () => {
+    const onRoute = vi.fn();
+    const onPlan = vi.fn();
+    const onStep = vi.fn();
+
+    await streamQa(
+      null,
+      '首套贷款成数上限是多少',
+      emptyHandlers({ onRoute, onPlan, onStep }),
+      new AbortController().signal,
+    );
+
+    expect(onRoute).not.toHaveBeenCalled();
+    expect(onPlan).not.toHaveBeenCalled();
+    expect(onStep).not.toHaveBeenCalled();
+  });
+
   it('skips sources when nothing is recalled', async () => {
     let sources: QaSource[] = [];
     const dones: QaDone[] = [];
@@ -119,17 +137,14 @@ describe('streamQa mock', () => {
     await streamQa(
       null,
       '没有资料的问题',
-      {
-        onMeta: () => undefined,
+      emptyHandlers({
         onSources: (value) => {
           sources = value;
         },
-        onDelta: () => undefined,
         onDone: (value) => {
           dones.push(value);
         },
-        onError: () => undefined,
-      },
+      }),
       new AbortController().signal,
     );
 
@@ -142,13 +157,7 @@ describe('streamQa mock', () => {
       streamQa(
         'missing-conversation',
         '任意问题',
-        {
-          onMeta: () => undefined,
-          onSources: () => undefined,
-          onDelta: () => undefined,
-          onDone: () => undefined,
-          onError: () => undefined,
-        },
+        emptyHandlers(),
         new AbortController().signal,
       ),
     ).rejects.toMatchObject({ status: 404 });
@@ -157,13 +166,7 @@ describe('streamQa mock', () => {
       streamQa(
         'missing-conversation',
         '任意问题',
-        {
-          onMeta: () => undefined,
-          onSources: () => undefined,
-          onDelta: () => undefined,
-          onDone: () => undefined,
-          onError: () => undefined,
-        },
+        emptyHandlers(),
         new AbortController().signal,
       ),
     ).rejects.toBeInstanceOf(ApiError);
@@ -177,6 +180,9 @@ function sseBody(blocks: string[]): string {
 function emptyHandlers(overrides: Partial<Parameters<typeof streamQa>[2]> = {}) {
   return {
     onMeta: () => undefined,
+    onRoute: () => undefined,
+    onPlan: () => undefined,
+    onStep: () => undefined,
     onSources: () => undefined,
     onDelta: () => undefined,
     onDone: () => undefined,
@@ -281,7 +287,10 @@ describe('streamQa real SSE', () => {
         controller.enqueue(encoder.encode(sseBody(blocks)));
       },
     });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
 
     const errors: string[] = [];
     const deltas: string[] = [];
@@ -309,7 +318,10 @@ describe('streamQa real SSE', () => {
       ]),
       { status: 200 },
     );
-    vi.stubGlobal('fetch', vi.fn(async () => response));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response),
+    );
 
     const errors: string[] = [];
     const deltas: string[] = [];
@@ -327,5 +339,114 @@ describe('streamQa real SSE', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('响应协议异常');
     expect(deltas).toEqual([]);
+  });
+
+  it('consumes route, plan and step events on the PLAN path', async () => {
+    const body = sseBody([
+      'event: meta\ndata: {"conversationId":"conv-5","roundId":"r5","userMessageId":"u5","assistantMessageId":"a5"}',
+      'event: route\ndata: {"route":"PLAN","confidence":0.92}',
+      'event: plan\ndata: {"degraded":false,"goal":"对比两家机构","steps":[{"stepId":"s1","order":1,"title":"检索华信接口","tool":"kb.search"},{"stepId":"s2","order":2,"title":"查询客户画像","tool":"customer.profile"}]}',
+      'event: step\ndata: {"stepId":"s1","status":"RUNNING"}',
+      'event: step\ndata: {"stepId":"s1","status":"DONE","elapsedMillis":480}',
+      'event: step\ndata: {"stepId":"s2","status":"FAILED","elapsedMillis":120}',
+      'event: sources\ndata: []',
+      'event: delta\ndata: 汇总如下',
+      'event: done\ndata: {"provider":"DashScope","elapsedMillis":1200,"sourceCount":0}',
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const events: string[] = [];
+    let route: QaRoute | null = null;
+    let plan: QaPlan | null = null;
+    const steps: QaStep[] = [];
+
+    await streamQa(
+      null,
+      '对比两家机构',
+      emptyHandlers({
+        onMeta: () => events.push('meta'),
+        onRoute: (value) => {
+          events.push('route');
+          route = value;
+        },
+        onPlan: (value) => {
+          events.push('plan');
+          plan = value;
+        },
+        onStep: (value) => {
+          events.push('step');
+          steps.push(value);
+        },
+        onSources: () => events.push('sources'),
+        onDelta: () => events.push('delta'),
+        onDone: () => events.push('done'),
+      }),
+      new AbortController().signal,
+    );
+
+    expect(events).toEqual([
+      'meta',
+      'route',
+      'plan',
+      'step',
+      'step',
+      'step',
+      'sources',
+      'delta',
+      'done',
+    ]);
+    expect(route).toEqual({ route: 'PLAN', confidence: 0.92 });
+    expect(plan).toEqual({
+      degraded: false,
+      goal: '对比两家机构',
+      steps: [
+        { stepId: 's1', order: 1, title: '检索华信接口', tool: 'kb.search' },
+        { stepId: 's2', order: 2, title: '查询客户画像', tool: 'customer.profile' },
+      ],
+    });
+    expect(steps).toEqual([
+      { stepId: 's1', status: 'RUNNING', elapsedMillis: null },
+      { stepId: 's1', status: 'DONE', elapsedMillis: 480 },
+      { stepId: 's2', status: 'FAILED', elapsedMillis: 120 },
+    ]);
+  });
+
+  it('ignores unknown events and malformed route/plan/step payloads', async () => {
+    const body = sseBody([
+      'event: meta\ndata: {"conversationId":"conv-6","roundId":"r6","userMessageId":"u6","assistantMessageId":"a6"}',
+      'event: retrieval\ndata: {"channels":["vector"]}',
+      'event: progress\ndata: 50%',
+      'event: route\ndata: {"route":"SOMETHING_NEW","confidence":1}',
+      'event: step\ndata: {"stepId":"s1","status":"MYSTERY"}',
+      'event: sources\ndata: []',
+      'event: delta\ndata: 正常正文',
+      'event: done\ndata: {"provider":"DashScope","elapsedMillis":300,"sourceCount":0}',
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const events: string[] = [];
+    const errors: string[] = [];
+
+    await streamQa(
+      null,
+      '任意问题',
+      emptyHandlers({
+        onRoute: () => events.push('route'),
+        onStep: () => events.push('step'),
+        onDelta: () => events.push('delta'),
+        onDone: () => events.push('done'),
+        onError: (message) => errors.push(message),
+      }),
+      new AbortController().signal,
+    );
+
+    expect(events).toEqual(['delta', 'done']);
+    expect(errors).toEqual([]);
   });
 });

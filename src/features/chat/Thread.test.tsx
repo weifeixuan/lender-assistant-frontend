@@ -30,6 +30,9 @@ function turn(overrides: Partial<Turn>): Turn {
     status: 'done',
     error: null,
     meta: null,
+    route: null,
+    plan: null,
+    steps: [],
     origin: 'history',
     createTime: '2026-10-21 10:00:00',
     ...overrides,
@@ -37,9 +40,7 @@ function turn(overrides: Partial<Turn>): Turn {
 }
 
 function renderThread(turns: Turn[]) {
-  return render(
-    <Thread turns={turns} onCite={vi.fn()} onRetry={vi.fn()} onStop={vi.fn()} />,
-  );
+  return render(<Thread turns={turns} onCite={vi.fn()} onRetry={vi.fn()} onStop={vi.fn()} />);
 }
 
 describe('Thread 历史态', () => {
@@ -52,7 +53,12 @@ describe('Thread 历史态', () => {
   it('shows the server error and retries the same question', () => {
     const onRetry = vi.fn();
     render(
-      <Thread turns={[turn({ status: 'error', error: '模型超时' })]} onCite={vi.fn()} onRetry={onRetry} onStop={vi.fn()} />,
+      <Thread
+        turns={[turn({ status: 'error', error: '模型超时' })]}
+        onCite={vi.fn()}
+        onRetry={onRetry}
+        onStop={vi.fn()}
+      />,
     );
     expect(screen.getByText('模型超时')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重试' }));

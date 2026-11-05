@@ -80,6 +80,39 @@ export interface QaDone {
   sourceCount: number;
 }
 
+/** 路由结果：IRRELEVANT 直接走规则提示，KNOWLEDGE 走原检索链路，PLAN 走多步执行 */
+export type QaRouteKind = 'IRRELEVANT' | 'KNOWLEDGE' | 'PLAN';
+
+export interface QaRoute {
+  route: QaRouteKind;
+  confidence: number;
+}
+
+/** 计划内单步的静态信息（不含参数，参数不展示也不下发） */
+export interface QaPlanStep {
+  stepId: string;
+  order: number;
+  title: string;
+  tool: string;
+}
+
+export interface QaPlan {
+  /** 规划失败后降级为直接检索时为 true，此时 steps 为空 */
+  degraded: boolean;
+  goal: string;
+  steps: QaPlanStep[];
+}
+
+export type QaStepStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'DEGRADED' | 'FAILED' | 'SKIPPED';
+
+/** 单步执行进度；同一步骤按 stepId 覆盖 */
+export interface QaStep {
+  stepId: string;
+  status: QaStepStatus;
+  /** 未结束时为 null */
+  elapsedMillis: number | null;
+}
+
 /** 会话历史消息角色 */
 export type MessageRole = 'USER' | 'ASSISTANT';
 

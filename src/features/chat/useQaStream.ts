@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/api/client';
 import { streamQa } from '@/api/qa';
-import type { QaDone, QaMeta, QaSource } from '@/api/types';
+import type { QaDone, QaMeta, QaPlan, QaRoute, QaSource, QaStep } from '@/api/types';
 
 export type TurnStatus = 'streaming' | 'done' | 'stopped' | 'error';
 
@@ -18,6 +18,11 @@ export interface Turn {
   status: TurnStatus;
   error: string | null;
   meta: QaDone | null;
+  /** PLAN 路径才有；历史消息与 mock 均为 null */
+  route: QaRoute | null;
+  plan: QaPlan | null;
+  /** 按 stepId 覆盖的已到达进度 */
+  steps: QaStep[];
   origin: 'live' | 'history';
   createTime: string | null;
 }
@@ -107,6 +112,9 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
         status: 'streaming',
         error: null,
         meta: null,
+        route: null,
+        plan: null,
+        steps: [],
         origin: 'live',
         createTime: null,
       };
@@ -130,6 +138,13 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
               }));
               metaHandler.current(meta);
             },
+            onRoute: (route) => patch(currentId, (turn) => ({ ...turn, route })),
+            onPlan: (plan) => patch(currentId, (turn) => ({ ...turn, plan })),
+            onStep: (step) =>
+              patch(currentId, (turn) => ({
+                ...turn,
+                steps: [...turn.steps.filter((item) => item.stepId !== step.stepId), step],
+              })),
             onSources: (sources) => patch(currentId, (turn) => ({ ...turn, sources })),
             onDelta: (text) =>
               patch(currentId, (turn) => ({ ...turn, answer: turn.answer + text })),
@@ -147,7 +162,8 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
       } catch (cause) {
         if (isAbort(cause)) {
           // 本轮已收到 done/error 时，abort 只是释放连接，不能把已完成的轮次降级成 stopped
-          if (finalStatus !== 'streaming') return { kind: 'finished', status: finalStatus, hadMeta };
+          if (finalStatus !== 'streaming')
+            return { kind: 'finished', status: finalStatus, hadMeta };
           patch(currentId, (turn) => ({ ...turn, status: 'stopped' }));
           return { kind: 'finished', status: 'stopped', hadMeta };
         }
