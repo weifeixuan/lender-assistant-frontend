@@ -119,13 +119,15 @@ export function Thread({
               {turn.status !== 'streaming' ? (
                 <div className="mt-2.5 border-t border-dashed border-line pt-2 text-meta text-muted">
                   {provider} · 耗时 {turn.meta ? formatMillis(turn.meta.elapsedMillis) : '—'}
-                  {turn.status === 'stopped' ? null : (
+                  {turn.status !== 'stopped' &&
+                  turn.meta?.provider !== 'rule' &&
+                  (turn.meta ? turn.meta.sourceCount : turn.sources.length) > 0 ? (
                     <>
                       {' '}
                       · 引用{' '}
                       {formatThousands(turn.meta ? turn.meta.sourceCount : turn.sources.length)} 条
                     </>
-                  )}
+                  ) : null}
                 </div>
               ) : null}
             </div>

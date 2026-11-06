@@ -141,7 +141,7 @@ describe('Thread 执行进度', () => {
     expect(screen.getByText('已中止')).toBeInTheDocument();
   });
 
-  it('IRRELEVANT 规则轮显示「规则提示」，不显示模型名与未召回', () => {
+  it('IRRELEVANT 规则轮显示「规则提示」，不显示模型名、引用条数与未召回', () => {
     renderThread([
       turn({
         status: 'done',
@@ -151,7 +151,21 @@ describe('Thread 执行进度', () => {
     ]);
 
     expect(screen.getByText(/规则提示/)).toBeInTheDocument();
+    expect(screen.queryByText(/引用/)).not.toBeInTheDocument();
     expect(screen.queryByText('未召回')).not.toBeInTheDocument();
     expect(screen.queryByText(/rule/)).not.toBeInTheDocument();
+  });
+
+  it('非规则轮 sourceCount 为 0 时保留未召回文案，且不显示「引用 0 条」', () => {
+    renderThread([
+      turn({
+        status: 'done',
+        answer: '暂时没有相关资料。',
+        meta: { provider: 'DashScope', elapsedMillis: 800, sourceCount: 0 },
+      }),
+    ]);
+
+    expect(screen.getByText('未召回')).toBeInTheDocument();
+    expect(screen.queryByText(/引用 0 条/)).not.toBeInTheDocument();
   });
 });
