@@ -1,28 +1,28 @@
 # 前端 Agent 契约（lender-assistant-frontend）
 
-> 本文件是本仓库（独立前端项目）的唯一技术规范入口。
-> 后端仓库在同级目录 `../lender-assistant`，两者前后端分离、各自独立构建与部署。
-> 需求口径以 `../lender-assistant/docs/阶段6_前端PRD.md` 为准；本文件只约束**怎么实现**，不新增产品行为。
+> 本文件是本仓库（独立前端项目）的唯一技术规范入口，只约束**怎么实现**，不新增产品行为。
+> 产品需求按阶段放在 `docs/prd/`；本文件只约束实现，不复述需求。
+> 后端仓库在同级目录 `../lender-assistant`，前后端分离、各自独立构建与部署。
 
 ## 0. 适用范围
 
-- 只影响本仓库。后端旧操作台 `../lender-assistant/src/main/resources/static/index.html` **保持不动**，不迁移、不复用其样式。
-- 后端接口契约的唯一事实源是 `../lender-assistant/src/main/java/com/lender/assistant/rag/vo/response/*.java` 与
-  `../lender-assistant/docs/阶段6_后端接口补充需求.md`；前端只在 `src/api/types.ts` 里镜像一次，
-  **其他文件不得私自定义后端字段类型**。
+- 只影响本仓库，与其后端仓库解耦；不迁移、不复用任何后端页面或样式。
+- 后端接口字段以后端仓库的接口实现为准；前端只在 `src/api/types.ts` 里镜像一次，
+  **其他文件不得私自定义后端字段类型**，契约变化只改这一处。
 
 ## 1. 技术栈（不引入清单外的库）
 
-| 项 | 选型 | 说明 |
-|---|---|---|
-| 构建 | Vite 5 | `dev` / `build` / `preview` |
-| 框架 | React 18 + TypeScript 5（strict） | 函数组件 + hooks |
-| 路由 | react-router-dom 6 | 仅 `/documents`、`/chat` 两条路由 |
-| 样式 | Tailwind CSS 3 + CSS 变量 | token 见 §6 |
-| 校验 | ESLint 9（flat config）+ Prettier | `npm run lint` / `npm run format` |
+| 项   | 选型                              | 说明                                |
+| --- | ------------------------------- | --------------------------------- |
+| 构建  | Vite 5                          | `dev` / `build` / `preview`       |
+| 框架  | React 18 + TypeScript 5（strict） | 函数组件 + hooks                      |
+| 路由  | react-router-dom 6              | `/documents`、`/chat`，其余重定向到文档页  |
+| 样式  | Tailwind CSS 3 + CSS 变量         | token 见 §6                        |
+| 校验  | ESLint 9（flat config）+ Prettier | `npm run lint` / `npm run format` |
+| 测试  | Vitest 2 + Testing Library（jsdom） | `npm test`（即 `vitest run`）        |
 
 禁止引入：组件库（antd/MUI/shadcn）、状态管理库（redux/zustand/jotai）、数据请求库（axios/swr/react-query）、
-日期库（dayjs/moment）、图标包、i18n 框架。需要新依赖时先在 PRD/issue 里说明理由，不要顺手装。
+日期库（dayjs/moment）、图标包、i18n 框架。需要新依赖时先在 issue 或 ADR 里说明理由，不要顺手装。
 
 ## 2. 目录结构
 
@@ -31,13 +31,14 @@ lender-assistant-frontend/
 ├── index.html
 ├── src/
 │   ├── main.tsx                 # 挂载 + 路由
-│   ├── App.tsx                  # 路由表
+│   ├── App.tsx                  # 路由表（默认导出）
 │   ├── styles/index.css         # Tailwind 入口 + CSS 变量 + 全局基础样式
 │   ├── api/                     # 与后端交互的一切（组件不得直接 fetch）
 │   │   ├── types.ts             # 后端契约镜像（唯一）
-│   │   ├── client.ts            # fetch 封装、ApiResponse 解包、ApiError
+│   │   ├── client.ts            # fetch 封装、ApiResponse 解包、ApiError、X-User-Id 注入
 │   │   ├── sse.ts               # SSE 报文解析（纯函数，可单测）
 │   │   ├── documents.ts         # 文档相关接口
+│   │   ├── conversations.ts     # 会话列表 / 历史消息 / 删除
 │   │   ├── qa.ts                # 问答流式接口
 │   │   └── mock.ts              # 本地 mock 数据与延迟
 │   ├── components/              # 跨页面复用的展示组件（无业务语义）
@@ -48,17 +49,20 @@ lender-assistant-frontend/
 │   │   └── icons.tsx            # 内联 SVG，统一 16px
 │   ├── features/
 │   │   ├── documents/           # 文档管理页（页面 + 子组件 + hooks）
-│   │   └── chat/                # 知识库对话页
-│   └── lib/
-│       ├── format.ts            # 千分位 / 时间 / 距今 / 单位格式化
-│       ├── knowledge.tsx        # 跨页共享的知识库概览状态（Provider + hook）
-│       └── uploadFile.ts        # docId 生成、docId 与上传文件的本地校验
+│   │   └── chat/                # 知识库对话页（页面 + 会话/流式 hooks + 子组件）
+│   ├── lib/
+│   │   ├── format.ts            # 千分位 / 时间 / 距今 / 单位格式化
+│   │   ├── identity.ts          # 开发期用户标识（X-User-Id 的字面量唯一来源）
+│   │   ├── knowledge.tsx        # 跨页共享的知识库概览状态（Provider + hook）
+│   │   └── uploadFile.ts        # docId 生成、docId 与上传文件的本地校验
+│   └── test/                    # Vitest 全局 setup 与冒烟测试
 ```
 
 规则：
 
 - `features/<域>/` 内部允许自由分层；跨域复用必须先下沉到 `components/` 或 `lib/`，禁止 `features/a` 直接 import `features/b`。
-- 一个文件一个默认导出组件（页面/容器），其余用小写命名导出。文件名用 PascalCase（组件）或 camelCase（工具/hook）。
+- 测试文件与源码就近同目录，命名以 `.test.ts` / `.test.tsx` 结尾。
+- `App.tsx` 用默认导出；其余组件、hook、工具一律具名导出。文件名用 PascalCase（组件）或 camelCase（工具/hook）。
 - 组件超过 ~200 行或承担两类职责时拆分，不为"以后可能复用"提前抽象。
 
 ## 3. TypeScript 规则
@@ -72,7 +76,7 @@ lender-assistant-frontend/
 ## 4. 组件与 hook 约定
 
 - 组件只负责渲染与交互编排；**取数、流式解析、分页状态全部放 hooks**，页面组件不得出现裸 `fetch`。
-- hook 命名 `useXxx`，放在使用它的 `features/` 目录；返回对象而非位置元组（>2 个返回值时）。
+- hook 命名 `useXxx`，与使用方同域：页面内部 hook 放 `features/<域>/`，跨页共享的放 `lib/`；返回对象而非位置元组（>2 个返回值时）。
 - 受控输入优先；只在输入框这类高频输入上用 ref 或非受控以减少重渲染。
 - 事件处理函数命名 `handleXxx`；传给子组件的回调以 `onXxx` 命名。
 - 副作用必须有清理：`AbortController`、定时器、事件监听在卸载或重跑时释放。
@@ -83,6 +87,7 @@ lender-assistant-frontend/
 - 除 `POST /api/qa` 外，所有接口返回统一包装 `{ code, msg, data }`：`client.ts` 统一解包，`code !== 200` 抛 `ApiError`，`message` 直接用服务端 `msg` 原文，**不得改写成"操作失败"**。
 - `POST /api/qa` 是 SSE，跳过包装，见 §5.2。
 - 请求路径统一走 `client.ts` 的 `apiPath()`（拼接 `import.meta.env.VITE_API_BASE ?? ''`），开发期由 Vite proxy 转发到 `http://localhost:8080`。
+- 所有请求经 `client.ts` 统一注入 `X-User-Id`（取值来自 `lib/identity.ts`），调用方传入的同名头会被覆盖；组件不得自行拼装身份头。
 - mock 开关：`VITE_USE_MOCK=true`（`.env.local`）或 URL 带 `?mock=1`。mock 只在 `api/` 内部生效，组件无感知；**禁止**在组件里写 `if (mock)` 分支。
 - mock 数据必须与真实契约字段完全一致（含可空字段），不得为了好看编造字段。
 
@@ -106,7 +111,8 @@ lender-assistant-frontend/
 
 - 只用 Tailwind 原子类 + `index.css` 里的 CSS 变量；禁止行内 `style={{ color:'#xxx' }}` 写颜色/间距魔法值（动态宽度、`max-height` 计算除外）。
 - 颜色语义：`--kb-bg` 页面底色、`--kb-panel` 卡片、`--kb-ink` 正文、`--kb-muted` 次要文字、`--kb-line` 描边、
-  `--kb-brand` 品牌蓝、`--kb-brand-soft` 品牌浅底、`--kb-ok`、`--kb-warn`。新增颜色先进 token，再在 `tailwind.config.ts` 映射。
+  `--kb-brand` 品牌蓝、`--kb-brand-soft` 品牌浅底、`--kb-ok`、`--kb-warn`；完整清单见 `index.css`。
+  新增颜色先进 token，再在 `tailwind.config.ts` 映射。
 - 字号档位固定：正文 12.5px（`text-body`）、次要 11px（`text-meta`）、标题 19px（`text-title`）、数字 19px 等宽（`tabular-nums`）。
 - 间距用 4 的倍数；页面水平留白 22px；卡片圆角 10px，输入类圆角 8px，抽屉/弹窗圆角 12px。
 - 数字展示：切片数/字符数用千分位；向量距离 3 位小数、RRF 分数 5 位小数、命中数整数——统一走 `lib/format.ts`。
@@ -115,7 +121,7 @@ lender-assistant-frontend/
 
 ## 7. 产品语义红线（写文案时逐条对照）
 
-- 术语只用 PRD §3：文档 / 文档名 / 原始文件名 / 切片 / 序号 / 章节路径 / 字符数 / 召回 / 来源。
+- 术语只用：文档 / 文档名 / 原始文件名 / 切片 / 序号 / 章节路径 / 字符数 / 召回 / 来源。
 - 禁用词：页码、token/令牌、解析中、待解析、进度百分比、查询改写、重排/rerank、top-k 重排、部门。
 - 不出现任何文档状态标签；上传返回即最终结果。
 - 对话是**多轮**：会话由后端懒创建，历史消息参与生成；前端只提交当前 `conversationId` 与问题，不得伪造上下文记忆。
@@ -143,14 +149,15 @@ lender-assistant-frontend/
 
 ```bash
 npm install
+npm test            # vitest run，全量用例
 npm run typecheck   # tsc --noEmit
 npm run lint
-npm run build
+npm run build       # 已内含 tsc --noEmit
 npm run dev         # http://localhost:5173（默认 mock 关闭，需后端在 8080）
 ```
 
-- 交付前至少通过 `typecheck` 与 `build`；无 Node 环境时必须在交付说明里写明未执行。
-- 手工验收路径：上传 docx → 列表看六字段 → 打开切片抽屉翻到第 2 页 → 对话提问 → 看侧栏四段与引用芯片联动 → 停止 / 重试 / 删除确认。
+- 交付前至少通过 `npm test`、`npm run typecheck`、`npm run build`；无法执行时必须在交付说明里写明原因。
+- 手工验收路径：上传 docx → 列表核对文档名 / 切片数 / 最近入库时间 → 打开切片抽屉翻页 → 对话提问 → 侧栏四段与引用芯片联动 → 停止 / 重试 / 删除确认 → 420px 窄屏无横向溢出。
 
 ## 11. 提交前自查
 
@@ -171,4 +178,4 @@ npm run dev         # http://localhost:5173（默认 mock 关闭，需后端在 
 
 ### Domain docs
 
-单上下文（single-context）：根目录 `GLOSSARY.md` + `docs/adr/` 下的 ADR。详见 `docs/agents/domain.md`。
+单上下文（single-context）：ADR 放在 `docs/adr/`；术语表与领域文档约定见 `docs/agents/domain.md`。
