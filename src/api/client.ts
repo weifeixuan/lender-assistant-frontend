@@ -56,16 +56,48 @@ function readMessage(payload: unknown): string | null {
   return typeof payload.msg === 'string' && payload.msg ? payload.msg : null;
 }
 
+/** 普通请求的超时默认值；上传等长耗时接口可显式放大 */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+export interface RequestOptions extends RequestInit {
+  /** 毫秒；超时后 abort 并抛出可读的 ApiError */
+  timeoutMs?: number;
+}
+
 /**
  * 普通接口请求：解包 {code,msg,data}，失败抛 ApiError。
  * 服务端 GlobalExceptionHandler 会同时给出 HTTP 状态与 body.code，两者都保留。
  */
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestOptions): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...rest } = init ?? {};
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const forwardAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', forwardAbort, { once: true });
+  }
+
   let response: Response;
   try {
-    response = await fetch(apiPath(path), { ...init, headers: authHeaders(init?.headers) });
+    response = await fetch(apiPath(path), {
+      ...rest,
+      headers: authHeaders(rest.headers),
+      signal: controller.signal,
+    });
   } catch {
-    throw new ApiError('连接中断，请确认后端服务已启动后重试', 0, null);
+    throw new ApiError(
+      timedOut ? '请求超时，请稍后重试' : '连接中断，请确认后端服务已启动后重试',
+      0,
+      null,
+    );
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener('abort', forwardAbort);
   }
 
   const text = await response.text();
@@ -102,9 +134,4 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
   return envelope.data;
-}
-
-/** 网络断开类错误的统一识别，用于决定是否展示「重试」 */
-export function isRetryable(error: unknown): boolean {
-  return !(error instanceof ApiError) || error.status === 0 || error.status >= 500;
 }

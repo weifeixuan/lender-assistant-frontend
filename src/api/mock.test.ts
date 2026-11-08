@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { DocSummary } from './types';
 import {
   beginMockRound,
+  compareDocSummaries,
   finishMockRound,
   listConversationsMock,
   listMessagesMock,
@@ -19,6 +21,37 @@ function complete(question: string, answer: string) {
   });
   return round;
 }
+
+describe('文档摘要排序比较器', () => {
+  function doc(docId: string, updateTime: string): DocSummary {
+    return {
+      docId,
+      docTitle: docId,
+      sourcePath: `${docId}.txt`,
+      chunkCount: 1,
+      charCountTotal: 100,
+      updateTime,
+    };
+  }
+
+  it('puts the most recently updated document first', () => {
+    const older = doc('older', '2026-01-01 00:00:00');
+    const newer = doc('newer', '2026-02-01 00:00:00');
+    expect(compareDocSummaries(newer, older)).toBeLessThan(0);
+    expect(compareDocSummaries(older, newer)).toBeGreaterThan(0);
+  });
+
+  it('breaks ties by docId so the comparator is self-consistent', () => {
+    const alpha = doc('alpha', '2026-01-01 00:00:00');
+    const beta = doc('beta', '2026-01-01 00:00:00');
+
+    expect(compareDocSummaries(alpha, beta)).toBeLessThan(0);
+    expect(compareDocSummaries(beta, alpha)).toBeGreaterThan(0);
+
+    const sorted = [beta, alpha].sort(compareDocSummaries);
+    expect(sorted.map((item) => item.docId)).toEqual(['alpha', 'beta']);
+  });
+});
 
 describe('会话 mock 仓库', () => {
   beforeEach(() => {

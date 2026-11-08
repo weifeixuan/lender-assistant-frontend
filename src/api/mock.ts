@@ -152,11 +152,15 @@ function nowText(): string {
   )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 }
 
+/** 最近入库优先；时间相同时按 docId 升序兜底，保证比较器自洽（相等必定返回 0） */
+export function compareDocSummaries(a: DocSummary, b: DocSummary): number {
+  if (a.updateTime === b.updateTime) return a.docId.localeCompare(b.docId);
+  return a.updateTime < b.updateTime ? 1 : -1;
+}
+
 export async function listDocumentsMock(): Promise<DocSummary[]> {
   await delay(600);
-  return currentDocs()
-    .map(summaryOf)
-    .sort((a, b) => (a.updateTime < b.updateTime ? 1 : -1));
+  return currentDocs().map(summaryOf).sort(compareDocSummaries);
 }
 
 export async function uploadDocumentMock(file: File, docId: string): Promise<UploadResult> {

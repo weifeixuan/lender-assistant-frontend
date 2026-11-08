@@ -21,6 +21,8 @@ export async function uploadDocument(file: File, docId: string): Promise<UploadR
   return request<UploadResult>(`/api/admin/documents?docId=${encodeURIComponent(docId)}`, {
     method: 'POST',
     body: form,
+    // 上传是同步阻塞的，真实耗时可能远超普通请求，单独放宽超时
+    timeoutMs: 120_000,
   });
 }
 

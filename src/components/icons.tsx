@@ -64,22 +64,6 @@ export function CloseIcon(props: IconProps) {
   );
 }
 
-export function ChevronDownIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="m4 6 4 4 4-4" />
-    </Svg>
-  );
-}
-
-export function ChevronRightIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="m6 4 4 4-4 4" />
-    </Svg>
-  );
-}
-
 export function CopyIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -102,14 +86,6 @@ export function SendIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M14 2 7 9M14 2 9.5 14 7 9 2 6.5 14 2Z" />
-    </Svg>
-  );
-}
-
-export function StopIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <rect x="4" y="4" width="8" height="8" rx="1" />
     </Svg>
   );
 }
