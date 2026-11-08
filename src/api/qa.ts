@@ -145,7 +145,7 @@ function parseStep(data: string): QaStep | null {
   };
 }
 
-/** 只做最小形状校验，字段语义错误由后端契约保证 */
+/** 来源数组：字段缺失或类型不符都按协议异常整体拒绝，避免默认值掩盖契约漂移 */
 function parseSources(data: string): QaSource[] | null {
   let payload: unknown;
   try {
@@ -156,22 +156,38 @@ function parseSources(data: string): QaSource[] | null {
   if (!Array.isArray(payload)) return null;
   const sources: QaSource[] = [];
   for (const item of payload) {
-    if (!isRecord(item) || typeof item.idx !== 'number') return null;
+    if (!isRecord(item)) return null;
+    const { idx, docTitle, sectionPath, chunkId, content, vectorDistance, keywordHits, bothChannels, rrfScore } =
+      item;
+    if (
+      typeof idx !== 'number' ||
+      typeof docTitle !== 'string' ||
+      typeof chunkId !== 'number' ||
+      typeof content !== 'string' ||
+      typeof bothChannels !== 'boolean' ||
+      typeof rrfScore !== 'string'
+    ) {
+      return null;
+    }
+    if (sectionPath !== null && typeof sectionPath !== 'string') return null;
+    if (vectorDistance !== null && typeof vectorDistance !== 'number') return null;
+    if (keywordHits !== null && typeof keywordHits !== 'number') return null;
     sources.push({
-      idx: item.idx,
-      docTitle: typeof item.docTitle === 'string' ? item.docTitle : '',
-      sectionPath: typeof item.sectionPath === 'string' ? item.sectionPath : null,
-      chunkId: typeof item.chunkId === 'number' ? item.chunkId : 0,
-      content: typeof item.content === 'string' ? item.content : '',
-      vectorDistance: typeof item.vectorDistance === 'number' ? item.vectorDistance : null,
-      keywordHits: typeof item.keywordHits === 'number' ? item.keywordHits : null,
-      bothChannels: item.bothChannels === true,
-      rrfScore: typeof item.rrfScore === 'string' ? item.rrfScore : '',
+      idx,
+      docTitle,
+      sectionPath,
+      chunkId,
+      content,
+      vectorDistance,
+      keywordHits,
+      bothChannels,
+      rrfScore,
     });
   }
   return sources;
 }
 
+/** 完成事件：provider / elapsedMillis / sourceCount 缺一即协议异常 */
 function parseDone(data: string): QaDone | null {
   let payload: unknown;
   try {
@@ -179,12 +195,17 @@ function parseDone(data: string): QaDone | null {
   } catch {
     return null;
   }
-  if (!isRecord(payload) || typeof payload.sourceCount !== 'number') return null;
-  return {
-    provider: typeof payload.provider === 'string' ? payload.provider : '未知',
-    elapsedMillis: typeof payload.elapsedMillis === 'number' ? payload.elapsedMillis : 0,
-    sourceCount: payload.sourceCount,
-  };
+  if (!isRecord(payload)) return null;
+  const { provider, elapsedMillis, sourceCount } = payload;
+  if (
+    typeof provider !== 'string' ||
+    !provider ||
+    typeof elapsedMillis !== 'number' ||
+    typeof sourceCount !== 'number'
+  ) {
+    return null;
+  }
+  return { provider, elapsedMillis, sourceCount };
 }
 
 function isAbort(cause: unknown): boolean {
@@ -309,7 +330,7 @@ async function streamQaMock(
 
 /**
  * POST /api/qa 的 SSE 消费。
- * 事件顺序：meta → [sources] → delta* → done，异常事件为 error。
+ * 事件顺序见 AGENTS.md §5.2：meta → [route] → [plan] → [step] → [sources] → delta* → done | error。
  * 调用方负责处理 AbortError（用户停止）与网络异常。
  */
 export async function streamQa(
@@ -384,7 +405,12 @@ export async function streamQa(
       }
       case 'sources': {
         const sources = parseSources(parsed.data);
-        if (sources) handlers.onSources(sources);
+        if (!sources) {
+          halted = true;
+          handlers.onError('响应协议异常：来源格式不合法');
+          return;
+        }
+        handlers.onSources(sources);
         break;
       }
       case 'delta':
@@ -419,6 +445,8 @@ export async function streamQa(
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      // 统一换行：CRLF 的 \r\n\r\n 不含 \n\n，不归一化就切不开事件块
+      buffer = buffer.replace(/\r\n/g, '\n');
       let separator = buffer.indexOf('\n\n');
       while (separator >= 0) {
         dispatch(buffer.slice(0, separator));
