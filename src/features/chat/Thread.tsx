@@ -55,7 +55,7 @@ export function Thread({
               )}
             >
               {turn.status === 'streaming' && !showProgress ? (
-                <div className="mb-2 flex items-center gap-1.5 text-meta text-muted">
+                <div role="status" aria-live="polite" className="mb-2 flex items-center gap-1.5 text-meta text-muted">
                   <Spinner />
                   {turn.sources.length > 0
                     ? `正在引用 ${formatThousands(turn.sources.length)} 份资料`
@@ -74,7 +74,7 @@ export function Thread({
               ) : null}
 
               {turn.status === 'stopped' ? (
-                <div className="mt-2 flex items-center gap-2">
+                <div role="status" aria-live="polite" className="mt-2 flex items-center gap-2">
                   <Tag tone="warn">已停止</Tag>
                   <span className="text-meta text-muted">已生成的内容保留</span>
                 </div>
@@ -108,7 +108,11 @@ export function Thread({
               ) : null}
 
               {turn.status === 'streaming' ? (
-                <div className="mt-2.5 flex items-center gap-2 border-t border-dashed border-line pt-2">
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mt-2.5 flex items-center gap-2 border-t border-dashed border-line pt-2"
+                >
                   <span className="text-meta text-muted">回答生成中</span>
                   <Button size="sm" className="ml-auto" onClick={onStop}>
                     停止
@@ -117,7 +121,11 @@ export function Thread({
               ) : null}
 
               {turn.status !== 'streaming' ? (
-                <div className="mt-2.5 border-t border-dashed border-line pt-2 text-meta text-muted">
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mt-2.5 border-t border-dashed border-line pt-2 text-meta text-muted"
+                >
                   {provider} · 耗时 {turn.meta ? formatMillis(turn.meta.elapsedMillis) : '—'}
                   {turn.status !== 'stopped' &&
                   turn.meta?.provider !== 'rule' &&

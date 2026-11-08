@@ -97,6 +97,35 @@ describe('Thread 历史态', () => {
     expect(onRetry).not.toHaveBeenCalled();
   });
 
+  it('announces status text politely while keeping the streaming answer body silent', () => {
+    renderThread([
+      turn({
+        id: 'live',
+        origin: 'live',
+        status: 'streaming',
+        answer: '正在生成的正文',
+      }),
+    ]);
+
+    const retrieving = screen.getByText('正在检索…');
+    expect(retrieving.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite');
+    const generating = screen.getByText('回答生成中');
+    expect(generating.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite');
+
+    const answer = screen.getByText('正在生成的正文');
+    expect(answer.closest('[aria-live]')).toBeNull();
+  });
+
+  it('announces the stopped state politely', () => {
+    renderThread([turn({ status: 'stopped', answer: '半截回答' })]);
+
+    expect(screen.getByText('已停止').closest('[role="status"]')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
+    expect(screen.getByText(/半截回答/).closest('[aria-live]')).toBeNull();
+  });
+
   it('shows the footer for live failed/stopped rounds and hides citations only when stopped', () => {
     renderThread([
       turn({

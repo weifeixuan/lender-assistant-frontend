@@ -71,6 +71,23 @@ describe('Thread 执行进度', () => {
     expect(screen.getByText('汇总结论')).toBeInTheDocument();
   });
 
+  it('按 step.order 排序渲染，不依赖后端数组顺序', () => {
+    renderThread([
+      turn({
+        plan: plan([THREE_STEPS[2], THREE_STEPS[0], THREE_STEPS[1]]),
+        steps: [running],
+      }),
+    ]);
+
+    const titles = screen
+      .getAllByRole('listitem')
+      .map((item) => item.textContent ?? '');
+    expect(titles[0]).toContain('检索华信接口');
+    expect(titles[1]).toContain('查询客户画像');
+    expect(titles[2]).toContain('汇总结论');
+    expect(titles[0]).toMatch(/1\./);
+  });
+
   it('按 stepId 展示各步骤状态与耗时，状态样式可区分', () => {
     renderThread([
       turn({

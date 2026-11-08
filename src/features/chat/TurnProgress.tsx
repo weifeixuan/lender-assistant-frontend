@@ -32,7 +32,7 @@ function labelOf(step: QaStep | undefined, active: boolean): { text: string; ton
 
 /**
  * 首个 delta 到达前的执行进度：计划未到只显示「正在规划」，
- * 计划到达后按 plan.steps 顺序渲染，并按 stepId 合并已到达的单步状态。
+ * 计划到达后按 step.order 排序渲染（后端不保证数组顺序），并按 stepId 合并已到达的单步状态。
  */
 export function TurnProgress({ turn }: { turn: Turn }) {
   const plan = turn.plan;
@@ -58,11 +58,13 @@ export function TurnProgress({ turn }: { turn: Turn }) {
     );
   }
 
+  const steps = [...plan.steps].sort((a, b) => a.order - b.order);
+
   return (
     <div className="mb-2 rounded-input border border-line bg-panel2 px-3 py-2">
-      <p className="text-meta font-medium text-ink2">计划 {plan.steps.length} 步</p>
+      <p className="text-meta font-medium text-ink2">计划 {steps.length} 步</p>
       <ol className="mt-1.5 flex flex-col gap-1">
-        {plan.steps.map((step) => {
+        {steps.map((step) => {
           const progress = turn.steps.find((item) => item.stepId === step.stepId);
           const { text, tone } = labelOf(progress, active);
           return (
