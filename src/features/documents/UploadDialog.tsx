@@ -11,6 +11,34 @@ const STAGES = ['解析', '切分', '向量化', '入库'] as const;
 /** 等待态的阶段切换阈值（毫秒）：只用于让使用者看到流水线顺序，不是真实进度 */
 const STAGE_THRESHOLDS = [0, 1200, 2600, 6000];
 
+/** 可聚焦候选：排除 disabled、tabindex="-1" 与不可见元素（隐藏的文件 input 走这条排除） */
+const FOCUSABLE_SELECTOR = 'button, input, textarea, [tabindex]';
+
+/** 不可见元素不参与焦点循环；getComputedStyle 覆盖行内 display/visibility */
+function isVisible(element: HTMLElement): boolean {
+  if (element.hidden) return false;
+  if (element.getAttribute('aria-hidden') === 'true') return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+function focusablesIn(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) =>
+      !(element as HTMLButtonElement).disabled && element.tabIndex >= 0 && isVisible(element),
+  );
+}
+
+/** 依次尝试候选元素，确保焦点真正落在面板内；全部失败时聚焦面板本身 */
+function focusInto(panel: HTMLElement, preferred?: HTMLElement | null): void {
+  const candidates = preferred ? [preferred, ...focusablesIn(panel)] : focusablesIn(panel);
+  for (const candidate of candidates) {
+    candidate.focus();
+    if (panel.contains(document.activeElement)) return;
+  }
+  panel.focus();
+}
+
 function activeStage(elapsed: number): number {
   let index = 0;
   for (let i = 0; i < STAGE_THRESHOLDS.length; i += 1) {
@@ -43,6 +71,7 @@ export function UploadDialog({
   const [result, setResult] = useState<UploadResult | null>(null);
   const [wasOverwrite, setWasOverwrite] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chooseButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,10 +88,7 @@ export function UploadDialog({
     setResult(null);
     setWasOverwrite(false);
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), textarea:not([disabled])',
-    );
-    (first ?? panel)?.focus();
+    if (panel) focusInto(panel, chooseButtonRef.current);
   }, [open]);
 
   // 焦点陷阱：对话框打开期间，焦点一旦落到面板外就拉回来
@@ -73,10 +99,7 @@ export function UploadDialog({
       if (!panel) return;
       const target = event.target;
       if (target instanceof Node && panel.contains(target)) return;
-      const first = panel.querySelector<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled])',
-      );
-      (first ?? panel).focus();
+      focusInto(panel, chooseButtonRef.current);
     };
     document.addEventListener('focusin', handleFocusIn);
     return () => document.removeEventListener('focusin', handleFocusIn);
@@ -159,25 +182,22 @@ export function UploadDialog({
       if (event.key !== 'Tab') return;
       const panel = panelRef.current;
       if (!panel) return;
-      const focusables = Array.from(
-        panel.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => element.getClientRects().length > 0);
+      const focusables = focusablesIn(panel);
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       if (!first || !last) return;
       const active = document.activeElement;
-      const inside = active instanceof Node && panel.contains(active);
-      if (!inside) {
+      const index = focusables.indexOf(active as HTMLElement);
+      // 焦点不在任何可见控件上（面板本身或面板外）：直接送入边界控件
+      if (index < 0) {
         event.preventDefault();
         (event.shiftKey ? last : first).focus();
         return;
       }
-      if (event.shiftKey && active === first) {
+      if (event.shiftKey && index === 0) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && active === last) {
+      } else if (!event.shiftKey && index === focusables.length - 1) {
         event.preventDefault();
         first.focus();
       }
@@ -241,6 +261,7 @@ export function UploadDialog({
                   ref={inputRef}
                   type="file"
                   accept=".docx,.txt,.md"
+                  tabIndex={-1}
                   className="hidden"
                   disabled={busy}
                   onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
@@ -257,7 +278,12 @@ export function UploadDialog({
                   ) : (
                     <div className="text-body text-ink2">把文件拖到这里，或</div>
                   )}
-                  <Button size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+                  <Button
+                    ref={chooseButtonRef}
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => inputRef.current?.click()}
+                  >
                     {file ? '重新选择' : '选择文件'}
                   </Button>
                 </div>
