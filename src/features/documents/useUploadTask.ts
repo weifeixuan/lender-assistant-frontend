@@ -69,12 +69,17 @@ export function useUploadTask({
       return;
     }
     setFile(next);
-    if (!docIdEdited) setDocId(docIdFromFileName(next.name));
+    if (!docIdEdited) {
+      setDocId(docIdFromFileName(next.name));
+      setAck(false);
+    }
   };
 
   const handleDocIdChange = (value: string) => {
     setDocId(value);
     setDocIdEdited(true);
+    // docId 一变，覆盖确认的目标就变了，必须重新确认
+    setAck(false);
     setIdError(null);
   };
 

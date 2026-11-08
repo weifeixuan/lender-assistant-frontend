@@ -17,6 +17,15 @@ const EXISTING: DocSummary = {
   updateTime: '2026-01-01 00:00:00',
 };
 
+const OTHER: DocSummary = {
+  docId: 'other',
+  docTitle: '另一个文档',
+  sourcePath: 'other.txt',
+  chunkCount: 3,
+  charCountTotal: 900,
+  updateTime: '2025-12-01 00:00:00',
+};
+
 const RESULT: UploadResult = {
   docId: 'sample',
   blocks: 1,
@@ -90,6 +99,25 @@ describe('UploadDialog', () => {
 
     expect(await screen.findByText('已重建 1,200 个切片')).toBeInTheDocument();
     expect(mockedUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets the overwrite acknowledgement when the docId changes', async () => {
+    mockedUpload.mockResolvedValue(RESULT);
+    renderDialog([EXISTING, OTHER]);
+
+    chooseFile('sample.txt');
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+
+    fireEvent.change(screen.getByLabelText('docId'), { target: { value: 'other' } });
+
+    expect(screen.getByText(/另一个文档/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: '上传入库' }));
+    expect(screen.getByText('请先勾选覆盖确认')).toBeInTheDocument();
+    expect(mockedUpload).not.toHaveBeenCalled();
   });
 
   it('keeps the server message and offers a retry when the upload fails', async () => {

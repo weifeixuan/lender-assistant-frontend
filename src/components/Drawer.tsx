@@ -5,7 +5,7 @@ import { cx } from './ui';
 
 /**
  * 右侧滑出抽屉：不使用遮罩，保证列表未被覆盖的部分仍可操作；
- * Esc 关闭，关闭后焦点回到触发元素（AGENTS.md §9）。
+ * 因此不声明 aria-modal（并非模态对话框），Esc 关闭，关闭后焦点回到触发元素（AGENTS.md §9）。
  */
 export function Drawer({
   open,
@@ -45,11 +45,10 @@ export function Drawer({
     <div
       ref={panelRef}
       role="dialog"
-      aria-modal="true"
       aria-label={ariaLabel}
       tabIndex={-1}
       className={cx(
-        'fixed inset-y-0 right-0 z-30 flex w-[460px] flex-col border-l border-line bg-panel shadow-drawer outline-none',
+        'fixed inset-y-0 right-0 z-30 flex w-full max-w-[460px] flex-col border-l border-line bg-panel shadow-drawer outline-none',
         className,
       )}
     >

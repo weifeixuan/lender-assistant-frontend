@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { deleteDocument } from '@/api/documents';
 import type { DocSummary } from '@/api/types';
 import { AppShell } from '@/components/AppShell';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -10,6 +9,7 @@ import { formatRelative, formatThousands } from '@/lib/format';
 import { ChunkDrawer } from './ChunkDrawer';
 import { DocTable } from './DocTable';
 import { UploadDialog } from './UploadDialog';
+import { useDocumentActions } from './useDocumentActions';
 
 export function DocumentsPage() {
   const { documents, loading, error, reload, docCount, chunkCount, lastIngestedAt } =
@@ -17,9 +17,6 @@ export function DocumentsPage() {
   const [filter, setFilter] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [drawerDoc, setDrawerDoc] = useState<DocSummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<DocSummary | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
 
   const visibleDocuments = useMemo(() => {
@@ -41,27 +38,19 @@ export function DocumentsPage() {
     void reload();
   };
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteDocument(deleteTarget.docId);
-      if (drawerDoc?.docId === deleteTarget.docId) setDrawerDoc(null);
-      if (highlight === deleteTarget.docId) setHighlight(null);
-      setDeleteTarget(null);
-      await reload();
-    } catch (cause) {
-      setDeleteError(cause instanceof Error ? cause.message : '删除失败');
-    } finally {
-      setDeleting(false);
-    }
-  };
+  const { deleteTarget, deleting, deleteError, requestDelete, cancelDelete, confirmDelete } =
+    useDocumentActions({
+      reload,
+      onDeleted: (docId) => {
+        if (drawerDoc?.docId === docId) setDrawerDoc(null);
+        setHighlight((current) => (current === docId ? null : current));
+      },
+    });
 
   return (
     <AppShell
       activeLabel="文档管理"
-      summary={{ docCount, chunkCount, lastIngestedAt, loading }}
+      summary={{ docCount, chunkCount, lastIngestedAt, loading, error, onRetry: () => void reload() }}
     >
       <div className="flex h-full flex-col overflow-auto px-6 py-5">
         <div className="flex items-start justify-between gap-4">
@@ -78,14 +67,34 @@ export function DocumentsPage() {
         </div>
 
         <div className="my-4 flex rounded-card border border-line bg-panel">
-          <Metric label="文档总数" value={loading ? '—' : formatThousands(docCount)} unit="份" />
-          <Metric label="切片总数" value={loading ? '—' : formatThousands(chunkCount)} unit="条" />
+          <Metric
+            label="文档总数"
+            value={loading || error ? '—' : formatThousands(docCount)}
+            unit="份"
+          />
+          <Metric
+            label="切片总数"
+            value={loading || error ? '—' : formatThousands(chunkCount)}
+            unit="条"
+          />
           <Metric
             label="最近入库"
-            value={loading ? '—' : formatRelative(lastIngestedAt)}
+            value={loading || error ? '—' : formatRelative(lastIngestedAt)}
             last
           />
         </div>
+
+        {error ? (
+          <div
+            role="status"
+            className="mb-3 flex items-start gap-2 rounded-input border border-dangerLine bg-dangerSoft px-3 py-2 text-small text-danger"
+          >
+            <span className="flex-1">知识库概览读取失败：{error}</span>
+            <Button size="sm" onClick={() => void reload()}>
+              重试
+            </Button>
+          </div>
+        ) : null}
 
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex h-8 w-[260px] items-center gap-1.5 rounded-input border border-line bg-panel px-2.5">
@@ -143,10 +152,7 @@ export function DocumentsPage() {
             documents={visibleDocuments}
             highlightDocId={highlight}
             onOpenChunks={setDrawerDoc}
-            onDelete={(doc) => {
-              setDeleteError(null);
-              setDeleteTarget(doc);
-            }}
+            onDelete={requestDelete}
           />
         )}
 
@@ -179,7 +185,7 @@ export function DocumentsPage() {
         confirmText="删除"
         busy={deleting}
         error={deleteError}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={cancelDelete}
         onConfirm={() => void confirmDelete()}
       />
     </AppShell>

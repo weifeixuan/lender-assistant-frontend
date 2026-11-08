@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { listChunks } from '@/api/documents';
+import { useEffect, useRef, useState } from 'react';
 import type { ChunkItem, DocSummary } from '@/api/types';
 import { Drawer, DrawerCloseButton } from '@/components/Drawer';
 import { Button, Spinner, cx } from '@/components/ui';
 import { CopyIcon } from '@/components/icons';
 import { formatChars, formatDateTime, formatThousands, parseServerTime } from '@/lib/format';
-
-const PAGE_SIZE = 20;
+import { useChunks } from './useChunks';
 
 export function ChunkDrawer({
   doc,
@@ -18,50 +16,18 @@ export function ChunkDrawer({
   onClose: () => void;
 }) {
   const docId = doc?.docId ?? null;
-  const [items, setItems] = useState<ChunkItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { items, total, loading, error, hasMore, loadMore, retry } = useChunks(docId, open);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const copyTimerRef = useRef<number | null>(null);
 
-  const loadPage = useCallback(
-    async (nextPage: number) => {
-      if (!docId) return;
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setLoading(true);
-      try {
-        const data = await listChunks(docId, nextPage, PAGE_SIZE, controller.signal);
-        setTotal(data.total);
-        setItems((previous) => (nextPage === 1 ? data.items : [...previous, ...data.items]));
-        setPage(nextPage);
-        setError(null);
-      } catch (cause) {
-        if (controller.signal.aborted) return;
-        setError(cause instanceof Error ? cause.message : '切片加载失败');
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    },
-    [docId],
-  );
-
   useEffect(() => {
-    setItems([]);
-    setTotal(0);
-    setPage(0);
     setExpanded(null);
     setCopied(null);
-    setError(null);
-    if (open && docId) void loadPage(1);
-    return () => abortRef.current?.abort();
-  }, [open, docId, loadPage]);
+    setCopyError(null);
+  }, [open, docId]);
 
   useEffect(
     () => () => {
@@ -69,12 +35,6 @@ export function ChunkDrawer({
     },
     [],
   );
-
-  const hasMore = items.length < total;
-  const loadMore = () => {
-    if (loading || !hasMore) return;
-    void loadPage(page + 1);
-  };
 
   const handleScroll = () => {
     const element = scrollRef.current;
@@ -85,6 +45,7 @@ export function ChunkDrawer({
   const copyContent = async (item: ChunkItem) => {
     try {
       await navigator.clipboard.writeText(item.content);
+      setCopyError(null);
       setCopied(item.chunkId);
       if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
       copyTimerRef.current = window.setTimeout(() => {
@@ -92,7 +53,7 @@ export function ChunkDrawer({
         setCopied((current) => (current === item.chunkId ? null : current));
       }, 1500);
     } catch {
-      setError('复制失败，请手动选中原文复制');
+      setCopyError('复制失败，请手动选中原文复制');
     }
   };
 
@@ -139,10 +100,16 @@ export function ChunkDrawer({
         {error ? (
           <div className="mb-2 flex items-start gap-2 rounded-input border border-dangerLine bg-dangerSoft px-3 py-2 text-small text-danger">
             <span className="flex-1 leading-relaxed">{error}</span>
-            <Button size="sm" onClick={() => void loadPage(items.length > 0 ? page + 1 : 1)} disabled={loading}>
+            <Button size="sm" onClick={retry} disabled={loading}>
               重试
             </Button>
           </div>
+        ) : null}
+
+        {copyError ? (
+          <p className="mb-2 rounded-input border border-dangerLine bg-dangerSoft px-3 py-2 text-small text-danger">
+            {copyError}
+          </p>
         ) : null}
 
         {items.length === 0 && !loading && !error && total === 0 ? (
