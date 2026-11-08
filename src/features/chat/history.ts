@@ -30,14 +30,11 @@ export function buildTurns(messages: MessageItem[]): Turn[] {
       sources,
       status,
       error: assistant.error,
-      meta:
-        assistant.status === 'DONE'
-          ? {
-              provider: assistant.provider ?? '未知',
-              elapsedMillis: assistant.elapsedMillis ?? 0,
-              sourceCount: sources.length,
-            }
-          : null,
+      meta: {
+        provider: assistant.provider ?? '未知',
+        elapsedMillis: assistant.elapsedMillis ?? 0,
+        sourceCount: sources.length,
+      },
       route: null,
       plan: null,
       steps: [],

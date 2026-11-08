@@ -10,9 +10,10 @@ import { Composer } from './Composer';
 import { Thread } from './Thread';
 import { TracePanel } from './TracePanel';
 import { useConversationController } from './useConversationController';
+import { shouldAutoCollapse } from './layout';
 
 export function ChatPage() {
-  const { docCount, chunkCount, lastIngestedAt, loading } = useKnowledge();
+  const { docCount, chunkCount, lastIngestedAt, loading, error, reload } = useKnowledge();
   const {
     mode,
     conversations: list,
@@ -57,13 +58,28 @@ export function ChatPage() {
     if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
   }, [turns]);
 
+  // 窄屏强制折叠两栏，避免三列在 420px 下横向溢出
+  useEffect(() => {
+    const apply = () => {
+      if (!shouldAutoCollapse(window.innerWidth)) return;
+      setSidebarCollapsed(true);
+      setTraceCollapsed(true);
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    return () => window.removeEventListener('resize', apply);
+  }, []);
+
   const handleCite = (turnId: string, idx: number) => {
     selectCitation(turnId, idx);
     setTraceCollapsed(false);
   };
 
   return (
-    <AppShell activeLabel="知识库对话" summary={{ docCount, chunkCount, lastIngestedAt, loading }}>
+    <AppShell
+      activeLabel="知识库对话"
+      summary={{ docCount, chunkCount, lastIngestedAt, loading, error, onRetry: () => void reload() }}
+    >
       <div
         className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)]"
         style={{
@@ -93,15 +109,26 @@ export function ChatPage() {
               {mode === 'draft' ? <Tag tone="plain">未保存</Tag> : null}
             </div>
             <p className="mt-1 text-meta text-muted">
-              {loading
-                ? '正在读取知识库规模…'
-                : `当前知识库 ${formatThousands(docCount)} 份文档 / ${formatThousands(
-                    chunkCount,
-                  )} 切片`}
+              {error ? (
+                <>
+                  <span className="text-danger">知识库规模读取失败：{error}</span>{' '}
+                  <button
+                    type="button"
+                    className="underline hover:text-ink"
+                    onClick={() => void reload()}
+                  >
+                    重试
+                  </button>
+                </>
+              ) : loading ? (
+                '正在读取知识库规模…'
+              ) : (
+                `当前知识库 ${formatThousands(docCount)} 份文档 / ${formatThousands(chunkCount)} 切片`
+              )}
             </p>
           </div>
 
-          {historyStatus === 'error' ? (
+          {historyStatus === 'error' && turns.length > 0 ? (
             <div
               role="status"
               className="mx-auto mb-3 flex w-full max-w-[760px] items-start gap-2 rounded-input border border-dangerLine bg-dangerSoft px-3 py-2 text-small text-danger"
@@ -152,6 +179,17 @@ export function ChatPage() {
                   <Spinner />
                   <p className="text-meta">正在加载会话历史…</p>
                 </div>
+              ) : historyStatus === 'error' ? (
+                <EmptyState
+                  icon={<ChatIcon size={20} className="text-muted" />}
+                  title="会话历史加载失败"
+                  description={historyError ?? '未能读取该会话的历史消息'}
+                  action={
+                    <Button onClick={retryHistory} size="sm">
+                      重试
+                    </Button>
+                  }
+                />
               ) : (
                 <EmptyState
                   icon={<ChatIcon size={20} className="text-muted" />}

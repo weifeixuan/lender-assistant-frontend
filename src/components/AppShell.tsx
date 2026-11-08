@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { ChatIcon, DocIcon } from './icons';
-import { cx } from './ui';
+import { Button, cx } from './ui';
 import { formatRelative, formatThousands } from '@/lib/format';
 
 export interface ShellSummary {
@@ -9,6 +9,9 @@ export interface ShellSummary {
   chunkCount: number;
   lastIngestedAt: string | null;
   loading: boolean;
+  /** 知识库概览读取失败时展示原因并提供重试，不再显示 0 份 / 0 切片 */
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 const NAV_ITEMS = [
@@ -69,23 +72,36 @@ export function AppShell({
             <span>知识库概览</span>
             {summary.loading ? <span>加载中…</span> : null}
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div>
-              <div className="text-meta text-muted">文档</div>
-              <div className="text-[15px] font-semibold tabular-nums">
-                {summary.loading ? '—' : formatThousands(summary.docCount)}
-              </div>
+          {summary.error ? (
+            <div className="mt-2">
+              <div className="text-meta leading-relaxed text-danger">概览读取失败</div>
+              {summary.onRetry ? (
+                <Button size="sm" className="mt-2" onClick={summary.onRetry}>
+                  重试
+                </Button>
+              ) : null}
             </div>
-            <div>
-              <div className="text-meta text-muted">切片</div>
-              <div className="text-[15px] font-semibold tabular-nums">
-                {summary.loading ? '—' : formatThousands(summary.chunkCount)}
+          ) : (
+            <>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-meta text-muted">文档</div>
+                  <div className="text-[15px] font-semibold tabular-nums">
+                    {summary.loading ? '—' : formatThousands(summary.docCount)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-meta text-muted">切片</div>
+                  <div className="text-[15px] font-semibold tabular-nums">
+                    {summary.loading ? '—' : formatThousands(summary.chunkCount)}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="mt-2 border-t border-line2 pt-2 text-meta text-muted">
-            最近入库 {summary.loading ? '—' : formatRelative(summary.lastIngestedAt)}
-          </div>
+              <div className="mt-2 border-t border-line2 pt-2 text-meta text-muted">
+                最近入库 {summary.loading ? '—' : formatRelative(summary.lastIngestedAt)}
+              </div>
+            </>
+          )}
         </div>
       </aside>
 

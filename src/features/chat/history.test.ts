@@ -70,7 +70,7 @@ describe('buildTurns', () => {
     expect(turn?.meta).toEqual({ provider: 'DashScope', elapsedMillis: 1860, sourceCount: 1 });
   });
 
-  it('maps FAILED and STOPPED without meta and keeps partial content', () => {
+  it('keeps provider and elapsed for FAILED and STOPPED rounds and keeps partial content', () => {
     const cases: Array<{ status: MessageStatus; expected: 'error' | 'stopped' }> = [
       { status: 'FAILED', expected: 'error' },
       { status: 'STOPPED', expected: 'stopped' },
@@ -86,14 +86,35 @@ describe('buildTurns', () => {
           content: '半截回答',
           status: item.status,
           sources: [source],
+          provider: 'DashScope',
+          elapsedMillis: 980,
           error: '模型超时',
         }),
       ]);
       expect(turns[0]?.status).toBe(item.expected);
       expect(turns[0]?.answer).toBe('半截回答');
       expect(turns[0]?.sources).toHaveLength(1);
-      expect(turns[0]?.meta).toBeNull();
+      expect(turns[0]?.meta).toEqual({
+        provider: 'DashScope',
+        elapsedMillis: 980,
+        sourceCount: 1,
+      });
     }
+  });
+
+  it('falls back to 未知 / 0 when a FAILED round has no persisted provider or duration', () => {
+    const turns = buildTurns([
+      message({ messageId: 'u1', roundId: 'r1', role: 'USER', content: '问题' }),
+      message({
+        messageId: 'a1',
+        roundId: 'r1',
+        role: 'ASSISTANT',
+        content: '半截回答',
+        status: 'FAILED',
+        sources: [source],
+      }),
+    ]);
+    expect(turns[0]?.meta).toEqual({ provider: '未知', elapsedMillis: 0, sourceCount: 1 });
   });
 
   it('treats null sources as an empty list', () => {
