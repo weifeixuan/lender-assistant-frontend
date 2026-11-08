@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -30,17 +31,23 @@ export function KnowledgeProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<DocSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** 只接受最新一次 reload 的响应，避免慢请求把新结果覆盖回旧数据 */
+  const reloadSeq = useRef(0);
 
   const reload = useCallback(async () => {
+    const seq = reloadSeq.current + 1;
+    reloadSeq.current = seq;
     setLoading(true);
     try {
       const data = await listDocuments();
+      if (seq !== reloadSeq.current) return;
       setDocuments(data);
       setError(null);
     } catch (cause) {
+      if (seq !== reloadSeq.current) return;
       setError(cause instanceof Error ? cause.message : '文档列表加载失败');
     } finally {
-      setLoading(false);
+      if (seq === reloadSeq.current) setLoading(false);
     }
   }, []);
 

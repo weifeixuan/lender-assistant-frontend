@@ -166,6 +166,34 @@ describe('useQaStream', () => {
     expect(result.current.turns[1]?.roundId).not.toBe(failedRoundId);
   });
 
+  it('merges multiple deltas that arrive within the same animation frame', async () => {
+    window.history.replaceState({}, '', '/');
+    const encoder = new TextEncoder();
+    const blocks = [
+      'event: meta\ndata: {"conversationId":"conv-1","roundId":"r1","userMessageId":"u1","assistantMessageId":"a1"}',
+      'event: delta\ndata: 第一段',
+      'event: delta\ndata: 第二段',
+      'event: done\ndata: {"provider":"DashScope","elapsedMillis":200,"sourceCount":0}',
+    ];
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`${blocks.join('\n\n')}\n\n`));
+        controller.close();
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+
+    const { result } = renderHook(() => useQaStream({ onMeta: vi.fn() }));
+    await act(async () => {
+      await result.current.ask('第一问', null);
+    });
+
+    const turn = result.current.turns[0];
+    expect(turn?.status).toBe('done');
+    // 同一帧内的两段正文在完成事件前被一次性合并，内容不丢也不乱序
+    expect(turn?.answer).toBe('第一段第二段');
+  });
+
   it('clears the streaming state when a real SSE error event arrives', async () => {
     window.history.replaceState({}, '', '/');
     const encoder = new TextEncoder();

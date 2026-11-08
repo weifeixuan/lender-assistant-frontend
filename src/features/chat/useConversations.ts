@@ -21,34 +21,56 @@ export function useConversations() {
   /** 同步镜像：并发回调（首屏历史晚于切换返回）里读不到最新 state，只能读 ref */
   const conversationsRef = useRef<ConversationSummary[]>([]);
   const activeIdRef = useRef<string | null>(null);
+  /** 列表请求序号：只接受最新一次请求的响应，避免慢响应覆盖新结果 */
+  const listSeq = useRef(0);
+  /** 乐观插入但服务端还没返回的会话 id：合并列表时必须保留 */
+  const optimisticIds = useRef(new Set<string>());
+
+  const applyList = useCallback((list: ConversationSummary[]) => {
+    const serverIds = new Set(list.map((item) => item.conversationId));
+    for (const id of optimisticIds.current) {
+      if (serverIds.has(id)) optimisticIds.current.delete(id);
+    }
+    const kept = conversationsRef.current.filter(
+      (item) => optimisticIds.current.has(item.conversationId) && !serverIds.has(item.conversationId),
+    );
+    const merged = [...kept, ...list];
+    conversationsRef.current = merged;
+    setConversations(merged);
+  }, []);
 
   /** 拉取列表；不自动选中任何会话，模式与当前会话都由用户点击决定 */
   const load = useCallback(async () => {
+    const seq = listSeq.current + 1;
+    listSeq.current = seq;
     setListStatus('loading');
     setListError(null);
     try {
       const list = await listConversations();
-      conversationsRef.current = list;
-      setConversations(list);
+      if (seq !== listSeq.current) return;
+      applyList(list);
       setListStatus('ready');
     } catch (cause) {
+      if (seq !== listSeq.current) return;
       setListStatus('error');
       setListError(cause instanceof Error ? cause.message : '会话列表加载失败');
     }
-  }, []);
+  }, [applyList]);
 
   /** 每轮结束后的静默刷新：失败不改变当前视图 */
   const refresh = useCallback(async () => {
+    const seq = listSeq.current + 1;
+    listSeq.current = seq;
     try {
       const list = await listConversations();
-      conversationsRef.current = list;
-      setConversations(list);
+      if (seq !== listSeq.current) return;
+      applyList(list);
       setListStatus('ready');
       setListError(null);
     } catch {
       // 列表刷新失败不影响当前对话
     }
-  }, []);
+  }, [applyList]);
 
   const startDraft = useCallback(() => {
     setMode('draft');
@@ -69,6 +91,7 @@ export function useConversations() {
     activeIdRef.current = conversationId;
     const previous = conversationsRef.current;
     if (previous.some((item) => item.conversationId === conversationId)) return;
+    optimisticIds.current.add(conversationId);
     const now = formatDateTime(new Date());
     const next = [{ conversationId, title, createTime: now, updateTime: now }, ...previous];
     conversationsRef.current = next;
@@ -76,6 +99,7 @@ export function useConversations() {
   }, []);
 
   const removeLocal = useCallback((conversationId: string) => {
+    optimisticIds.current.delete(conversationId);
     const next = conversationsRef.current.filter(
       (item) => item.conversationId !== conversationId,
     );

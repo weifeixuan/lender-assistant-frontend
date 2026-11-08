@@ -101,6 +101,29 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
       let hadMeta = false;
       let finalStatus: TurnStatus = 'streaming';
 
+      // 流式正文按动画帧批量合并：逐个 delta 直接 setState 会让整棵消息树每 token 重渲染
+      let pendingDelta = '';
+      let frame: number | null = null;
+      const flushDelta = () => {
+        if (frame !== null) {
+          window.cancelAnimationFrame(frame);
+          frame = null;
+        }
+        if (!pendingDelta) return;
+        const text = pendingDelta;
+        pendingDelta = '';
+        const id = currentId;
+        patch(id, (turn) => ({ ...turn, answer: turn.answer + text }));
+      };
+      const queueDelta = (text: string) => {
+        pendingDelta += text;
+        if (frame !== null) return;
+        frame = window.requestAnimationFrame(() => {
+          frame = null;
+          flushDelta();
+        });
+      };
+
       const nextTurn: Turn = {
         id: tempId,
         messageId: null,
@@ -146,14 +169,15 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
                 steps: [...turn.steps.filter((item) => item.stepId !== step.stepId), step],
               })),
             onSources: (sources) => patch(currentId, (turn) => ({ ...turn, sources })),
-            onDelta: (text) =>
-              patch(currentId, (turn) => ({ ...turn, answer: turn.answer + text })),
+            onDelta: queueDelta,
             onDone: (done) => {
               finalStatus = 'done';
+              flushDelta();
               patch(currentId, (turn) => ({ ...turn, status: 'done', meta: done }));
             },
             onError: (message) => {
               finalStatus = 'error';
+              flushDelta();
               patch(currentId, (turn) => ({ ...turn, status: 'error', error: message }));
             },
           },
@@ -164,6 +188,7 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
           // 本轮已收到 done/error 时，abort 只是释放连接，不能把已完成的轮次降级成 stopped
           if (finalStatus !== 'streaming')
             return { kind: 'finished', status: finalStatus, hadMeta };
+          flushDelta();
           patch(currentId, (turn) => ({ ...turn, status: 'stopped' }));
           return { kind: 'finished', status: 'stopped', hadMeta };
         }
@@ -179,6 +204,7 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
         }
         const message =
           cause instanceof ApiError ? cause.message : '连接中断，请确认后端服务已启动后重试';
+        flushDelta();
         patch(currentId, (turn) => ({ ...turn, status: 'error', error: message }));
         return { kind: 'finished', status: 'error', hadMeta };
       } finally {
@@ -191,6 +217,7 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
       // 流正常关闭但没等到 done/error：本轮没有终态，不能残留 streaming（否则输入区永久禁用）
       if (finalStatus === 'streaming') {
         finalStatus = 'error';
+        flushDelta();
         patch(currentId, (turn) => ({ ...turn, status: 'error', error: '连接提前结束，请重试' }));
       }
 
@@ -199,5 +226,5 @@ export function useQaStream({ onMeta }: { onMeta: (meta: QaMeta) => void }) {
     [patch, removeTurn],
   );
 
-  return { turns, streamingTurnId, ask, stop, resetTurns, clearTurns, removeTurn };
+  return { turns, streamingTurnId, ask, stop, resetTurns, clearTurns };
 }
