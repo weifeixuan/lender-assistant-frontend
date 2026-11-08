@@ -100,12 +100,19 @@ lender-assistant-frontend/
 
 - 必须 `fetch` + POST + `ReadableStream` 手工解析，**不能用 `EventSource`**（只支持 GET）。
 - 报文按空行分块；块内 `event:` 行取事件名，`data:` 行按顺序拼接（多行 data 用 `\n` 连接）。
-- 事件集合：`meta`（JSON，必须是首个事件，含 `conversationId/roundId/userMessageId/assistantMessageId`）→
-  [`sources`]（JSON 数组，未召回时省略）→ `delta`（纯文本，可多次）→ `done`（JSON）或 `error`（纯文本）。
+- 事件集合与顺序（与后端 `QaEventEmitter`、`src/api/qa.ts` 一致）：
+  `meta`（JSON，必须是首个事件，含 `conversationId/roundId/userMessageId/assistantMessageId`）→
+  [`route`]（JSON，`{route, confidence}`；`route ∈ IRRELEVANT | KNOWLEDGE | PLAN`）→
+  [`plan`]（JSON，仅 PLAN 路径，含 `degraded/goal/steps`）→
+  [`step`]（JSON，仅 PLAN 路径，单步进度，按 `stepId` 覆盖）→
+  [`sources`]（JSON 数组；成功路径上总会推送，未召回时为空数组，协议保持单一形态）→
+  `delta`（纯文本，可多次）→ `done`（JSON）或 `error`（纯文本，终态）。
+  `route` 在非 mock 模式下总会先于检索推送；`plan/step` 只出现在 PLAN 路径。
   **不得**新增/消费其他事件名（后端没有 `retrieval`、`progress` 之类）。
 - 解析函数为纯函数 `parseSseBlock(block)`，返回 `{ event, data }`，便于测试。
 - 停止：`AbortController.abort()`；已渲染内容保留，标记 `已停止`，不算失败。
-- 未召回时后端只推 `delta`、不推 `sources`：前端以 `sourceCount === 0` 或"无 sources 事件"判定空召回，按普通提示样式渲染。
+- 未召回时后端仍推 `sources` 空数组，随后由 `delta` 给出引导文案、`done.sourceCount` 为 0：
+  前端以 `sourceCount === 0` 或空 `sources` 判定空召回，按普通提示样式渲染。
 
 ## 6. 样式与 design token
 
