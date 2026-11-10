@@ -9,7 +9,6 @@
 - 后端仓库：[weifeixuan/lender-assistant](https://github.com/weifeixuan/lender-assistant)，本地默认放在同级目录 `../lender-assistant`。
 - 后端对外提供 REST + SSE 接口，默认监听 `http://localhost:8080`；后端能力、数据库与模型配置见后端 README。
 - 前端开发期通过 Vite proxy 把 `/api` 转发到 `http://localhost:8080`，业务代码里只写相对路径。
-- 所有业务接口都要求携带 `X-User-Id`；会话由后端懒创建，首问不带 `conversationId` 时由服务端创建并通过 SSE 首个 `meta` 事件回传真实 id。
 
 ## 页面与能力
 
@@ -26,9 +25,9 @@
 **知识库对话页（`/chat`）**
 
 - 会话列表（最近会话 / 新对话）、历史消息加载、删除会话（二次确认）。
-- 多轮提问：`POST /api/qa` 的 SSE 流式回答，首问由后端懒创建会话，收到 `meta` 后才进入会话列表。
+- 多轮提问：SSE 流式回答；首问由后端创建会话，成功后才进入「最近」列表。
 - 生成中可停止；失败可重试（重试即同一问题的新一轮问答）。
-- 回答正文中的【来源N】与右侧检索过程侧栏联动：路由结论（route）、计划步骤（plan / step）、来源明细（sources）。
+- 回答正文中的【来源N】与右侧检索过程侧栏联动（双通道召回 → RRF 融合 → 送入上下文 → 来源明细）；计划步骤显示在回答区，路由结论只影响提示形态。
 - 页面不提供登录、用户菜单、设置与全局搜索。
 
 ## 技术栈
@@ -57,7 +56,7 @@ lender-assistant-frontend/
 │   ├── styles/index.css         # Tailwind 入口 + CSS 变量 + 全局基础样式
 │   ├── api/                     # 与后端交互的一切（组件不得直接 fetch）
 │   │   ├── types.ts             # 后端契约镜像（唯一）
-│   │   ├── client.ts            # fetch 封装、统一解包、ApiError、X-User-Id 注入
+│   │   ├── client.ts            # fetch 封装、统一解包、ApiError、身份与超时
 │   │   ├── sse.ts               # SSE 报文解析（纯函数）
 │   │   ├── documents.ts         # 文档列表 / 上传 / 删除 / 切片分页
 │   │   ├── conversations.ts     # 会话列表 / 历史消息 / 删除
@@ -67,7 +66,7 @@ lender-assistant-frontend/
 │   ├── features/
 │   │   ├── documents/           # 文档管理页及子组件
 │   │   └── chat/                # 对话页、会话/流式 hooks、侧栏与气泡
-│   ├── lib/                     # format / identity / knowledge 状态 / uploadFile 校验
+│   ├── lib/                     # format / identity / knowledge 状态 / uploadFile 校验 / useDialogFocusTrap
 │   └── test/                    # Vitest 全局 setup 与冒烟测试
 ├── docs/                        # ADR、Agent 文档、PRD
 ├── AGENTS.md                    # 本仓库实现规范（唯一技术规范入口）
@@ -113,30 +112,9 @@ mock 开关只在 API 层生效（`VITE_USE_MOCK=true` 或 URL 带 `?mock=1`）�
 
 ## 与后端对接
 
-**接口层**：所有普通接口走 `src/api/client.ts` 的 `request()`，按 `{ code, msg, data }` 解包；`code !== 200` 抛 `ApiError`，错误文案直接使用服务端 `msg` 原文。
+**请求封装**：所有请求统一走 `src/api/client.ts`（统一解包、错误映射、身份与超时处理），组件不得直接 `fetch`；流式接口统一走 `src/api/sse.ts` 的报文解析，不使用 `EventSource`。
 
-**身份**：`client.ts` 统一注入 `X-User-Id`，取值来自 `src/lib/identity.ts` 的固定开发期标识；调用方传入的同名头会被覆盖，组件不得自行拼装身份头。
-
-**已在用的接口**（路径以源码为准）：
-
-| 方法 | 路径 | 文件 |
-| --- | --- | --- |
-| GET | `/api/admin/documents` | `src/api/documents.ts` |
-| POST | `/api/admin/documents?docId=…`（multipart 字段名固定 `file`） | `src/api/documents.ts` |
-| DELETE | `/api/admin/documents/{docId}` | `src/api/documents.ts` |
-| GET | `/api/admin/documents/{docId}/chunks?page=…&size=…` | `src/api/documents.ts` |
-| GET | `/api/conversations` | `src/api/conversations.ts` |
-| GET | `/api/conversations/{conversationId}/messages` | `src/api/conversations.ts` |
-| DELETE | `/api/conversations/{conversationId}` | `src/api/conversations.ts` |
-| POST | `/api/qa`（SSE） | `src/api/qa.ts` |
-
-**SSE 流式接口** `POST /api/qa`：
-
-- 用 `fetch` + `ReadableStream` 手工解析，不使用 `EventSource`（只支持 GET）。
-- 请求体只提交当前问题与可选的 `conversationId`，不伪造上下文。
-- 事件顺序：`meta`（首个，含 `conversationId / roundId / userMessageId / assistantMessageId`）→ `route` / `plan` / `step`（仅 PLAN 路径）→ [`sources`]（未召回时省略）→ `delta`（可多次，纯文本）→ `done` 或 `error`（终态）。
-- 收到 `done` / `error` 即结束本轮并释放连接；未知事件忽略。
-- 停止由 `AbortController.abort()` 实现，已渲染内容保留并标记为「已停止」。
+**停止**：由 `AbortController.abort()` 实现，已渲染内容保留并标记为「已停止」。
 
 ## 测试
 
@@ -146,7 +124,7 @@ mock 开关只在 API 层生效（`VITE_USE_MOCK=true` 或 URL 带 `?mock=1`）�
 npm test
 ```
 
-当前实测结果（2026-11-08 执行 `npm test`）：**21 个测试文件、109 个用例全部通过**。覆盖 API 层（client / documents 之外的会话与问答解析）、SSE 消费与终态、会话切换与历史合并、停止 / 失败 / 重试、删除确认、Composer 键盘交互等。
+当前实测结果（2026-11-09 执行 `npm test`）：**33 个测试文件、163 个用例全部通过**。覆盖 API 层（client / 会话 / 问答 / SSE 解析与 mock）、SSE 消费与终态、会话切换与历史合并、停止 / 失败 / 重试、文档切片分页与删除确认、上传覆盖确认与焦点管理、Composer 键盘交互等。
 
 ## 文档索引
 
